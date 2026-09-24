@@ -1365,11 +1365,16 @@ function badge(label, cx, cy, T) {
   ]);
 }
 
+/* Size of the drawing; while editing, a hand-placed tab keeps some free room on the right and at the bottom
+   (for new blocks and the suggested next block), which downloads leave out. */
+function outW(L) { return L.width - (L.roomX || 0); }
+function outH(L) { return L.height - (L.roomY || 0); }
 function drawDiagram(st, forExport) {
   var d = st.d, L = st.L, T = THEMES[themeName];
   var uid = st.uid + (forExport ? 'x' : '');
+  var W = forExport ? outW(L) : L.width, Hh = forExport ? outH(L) : L.height;
   var svg = S('svg', {
-    xmlns: SVG_NS, width: L.width, height: L.height, viewBox: '0 0 ' + L.width + ' ' + L.height,
+    xmlns: SVG_NS, width: W, height: Hh, viewBox: '0 0 ' + W + ' ' + Hh,
     'font-family': FONT, role: 'img', 'aria-label': d.title || spec.title || 'Diagram'
   });
   var defs = S('defs');
@@ -1417,7 +1422,7 @@ function drawDiagram(st, forExport) {
     markers[key] = 'url(#' + id + ')';
     return markers[key];
   }
-  if (forExport) svg.appendChild(S('rect', { width: L.width, height: L.height, fill: T.page }));
+  if (forExport) svg.appendChild(S('rect', { width: W, height: Hh, fill: T.page }));
   var root = S('g', { class: 'root', transform: 'translate(' + fmt(L.ox) + ' ' + fmt(L.oy) + ')' });
   svg.appendChild(root);
 
@@ -3025,8 +3030,8 @@ function pngDataUrl(st, done) {
   var img = new Image();
   img.onload = function () {
     var canvas = document.createElement('canvas');
-    canvas.width = st.L.width * 2;
-    canvas.height = st.L.height * 2;
+    canvas.width = outW(st.L) * 2;
+    canvas.height = outH(st.L) * 2;
     canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
     URL.revokeObjectURL(url);
     try { done(canvas.toDataURL('image/png')); } catch (err) { done(null); }
@@ -3051,8 +3056,8 @@ function pngBlob(st) {
     var img = new Image();
     img.onload = function () {
       var k = 2, canvas = document.createElement('canvas');
-      canvas.width = st.L.width * k;
-      canvas.height = st.L.height * k;
+      canvas.width = outW(st.L) * k;
+      canvas.height = outH(st.L) * k;
       canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
       try { canvas.toBlob(function (b) { if (b) resolve(b); else reject(new Error('png')); }, 'image/png'); }
@@ -3307,7 +3312,7 @@ function buildTabs() {
   nav.hidden = false;
   states.forEach(function (st, i) {
     var b = H('button', { type: 'button', class: 'tab', role: 'tab', 'aria-selected': 'false', 'aria-controls': 'section-' + st.d.id, text: st.d.title || st.d.id });
-    b.addEventListener('click', function () { showSection(i, true); });
+    b.addEventListener('click', function () { showSection(i, true); if (typeof edFollowTab === 'function') edFollowTab(st.d.id); });
     nav.appendChild(b);
     st.tab = b;
   });

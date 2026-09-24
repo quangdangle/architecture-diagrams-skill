@@ -52,6 +52,7 @@ Use a symbol with `"shape": "<name>"` (an alias works too). Pins are given as NA
 | `adder` | 40 × 40 | A (in) [0, 0.5], B (in) [0.5, 0], C (in) [0.5, 1], Y (out) [1, 0.5] | sum, summer |
 | `multiplier` | 40 × 40 | A (in) [0, 0.5], B (in) [0.5, 0], C (in) [0.5, 1], Y (out) [1, 0.5] | mixer |
 | `dff` | 56 × 72 | D (in) [0, 0.3], CLK (clk) [0, 0.72], Q (out) [1, 0.3], QN (out) [1, 0.78] | d-ff, ff, flipflop, flop |
+| `dffr` | 56 × 84 | D (in) [0, 0.28], CLK (clk) [0, 0.6], Q (out) [1, 0.28], QN (out) [1, 0.6], RST_N (in) [0.5, 1] | dff-r, dffrn, ffr |
 | `latch` | 56 × 72 | D (in) [0, 0.3], EN (clk) [0, 0.72], Q (out) [1, 0.3] |  |
 | `register` | 110 × 44 | D (in) [0, 0.5], CLK (clk) [0.5, 1], Q (out) [1, 0.5] | reg |
 | `counter` | 96 × 56 | EN (in) [0, 0.3], CLK (clk) [0, 0.72], Q (out) [1, 0.5] |  |

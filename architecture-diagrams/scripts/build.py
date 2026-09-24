@@ -29,7 +29,8 @@ from validate import validate_spec  # noqa: E402
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE = SKILL_DIR / "assets" / "template.html"
 JS_DIR = SKILL_DIR / "assets" / "js"
-JS_ORDER = ("renderer.js", "icons.js", "symbols.js", "stencils.js", "drawio.js", "editor.js", "boot.js")
+JS_ORDER = ("renderer.js", "icons.js", "symbols.js", "stencils.js", "drawio.js", "editor.js", "assist.js", "boot.js")
+PATTERNS_FILE = SKILL_DIR / "assets" / "patterns.json"
 STENCIL_DIR = SKILL_DIR / "assets" / "stencils"
 VENDORED_DAGRE = SKILL_DIR / "assets" / "vendor" / "dagre.min.js"
 CDN_URLS = (
@@ -106,9 +107,19 @@ def ai_prompt():
     return text.replace("{{SYMBOLS}}", "\n".join(lines)).replace("{{PLAIN}}", ", ".join(plain))
 
 
+def patterns():
+    """The ready-made patterns (assets/patterns.json) behind the editor's Patterns list and diagram_insert_pattern."""
+    if not PATTERNS_FILE.exists():
+        return {"patterns": []}
+    data = json.loads(PATTERNS_FILE.read_text(encoding="utf-8"))
+    data.pop("about", None)
+    return data
+
+
 def js_bundle():
     """The page script: every module is concatenated into one closure, boot.js last."""
-    parts = ["var STENCIL_PACK = %s;" % json.dumps(stencil_pack()), "var AI_PROMPT = %s;" % json.dumps(ai_prompt())]
+    parts = ["var STENCIL_PACK = %s;" % json.dumps(stencil_pack()), "var AI_PROMPT = %s;" % json.dumps(ai_prompt()),
+             "var PATTERNS = %s;" % json.dumps(patterns(), ensure_ascii=False, separators=(",", ":"))]
     for name in JS_ORDER:
         path = JS_DIR / name
         if path.exists():

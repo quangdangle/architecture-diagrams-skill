@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+SKILL = ROOT / "architecture-diagrams"
 SERVER = ROOT / "architecture-diagrams" / "scripts" / "mcp_server.py"
 sys.path.insert(0, str(ROOT / "architecture-diagrams" / "scripts"))
 sys.dont_write_bytecode = True
@@ -56,8 +57,15 @@ class McpServer(unittest.TestCase):
     def test_tools_are_listed(self):
         names = [t["name"] for t in self.call("tools/list")["result"]["tools"]]
         for name in ("diagram_guide", "diagram_validate", "diagram_build", "diagram_open_editor", "diagram_export",
-                     "diagram_import_drawio", "diagram_scan_code", "diagram_symbols"):
+                     "diagram_import_drawio", "diagram_scan_code", "diagram_symbols", "diagram_patterns",
+                     "diagram_insert_pattern", "diagram_apply_ops", "diagram_suggest"):
             self.assertIn(name, names)
+
+    def test_patterns_are_listed(self):
+        result = self.tool("diagram_patterns", lang="en")
+        count = len(json.loads((SKILL / "assets" / "patterns.json").read_text(encoding="utf-8"))["patterns"])
+        self.assertEqual(len(result["structuredContent"]["patterns"]), count)
+        self.assertIn("sync2 [chip] 2-flop synchronizer", result["content"][0]["text"])
 
     def test_guide_lists_pins(self):
         text = self.tool("diagram_guide")["content"][0]["text"]
@@ -103,6 +111,29 @@ class McpServer(unittest.TestCase):
         self.assertFalse(imported["isError"], imported["content"][0]["text"])
         self.assertIn('"diagrams"', imported["content"][0]["text"])
 
+
+    @unittest.skipUnless(find_browser(), "needs Chrome, Chromium, Edge or Brave")
+    def test_insert_pattern_then_fix_with_ops(self):
+        inserted = self.tool("diagram_insert_pattern", spec=CDC, pattern="sync2", near="ff3", diagram="cdc")
+        self.assertFalse(inserted["isError"], inserted["content"][0]["text"])
+        text = inserted["content"][0]["text"]
+        self.assertIn("Added blocks: sync1, sync2", text)
+        self.assertIn("clk_a", text)  # a synchronizer after sync3 (clk_b domain) takes the other clock and says so
+        self.assertIn("Checks on tab cdc: no problems", text)
+        path = inserted["structuredContent"]["path"]
+        ops = [{"op": "addNode", "node": {"id": "lone", "shape": "dff", "title": "lone"}, "near": "sync2"},
+               {"op": "connect", "from": "sync2.Q", "to": "lone.D"}]
+        added = self.tool("diagram_apply_ops", path=path, ops={"ops": ops}, diagram="cdc")
+        self.assertFalse(added["isError"], added["content"][0]["text"])
+        self.assertRegex(added["content"][0]["text"], r"lone.*CLK")
+        fix = [c for c in added["structuredContent"]["checks"] if "lone" in c["text"]][0]["fixes"][0]["ops"]
+        fixed = self.tool("diagram_apply_ops", path=added["structuredContent"]["path"], ops=fix, diagram="cdc")
+        self.assertIn("Checks on tab cdc: no problems", fixed["content"][0]["text"])
+        bad = self.tool("diagram_apply_ops", path=path, ops=[{"op": "connect", "from": "ff3.Z", "to": "sync1.D"}], diagram="cdc")
+        self.assertTrue(bad["isError"])
+        self.assertRegex(bad["content"][0]["text"], "has no pin|không có chân")  # messages follow the spec's language
+        sugg = self.tool("diagram_suggest", path=path, diagram="cdc", node="sync2")
+        self.assertIn("pattern=sync2", sugg["content"][0]["text"])
 
 if __name__ == "__main__":
     unittest.main()

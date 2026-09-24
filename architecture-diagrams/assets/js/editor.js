@@ -17,7 +17,7 @@ var EDT = {
     autoLayout: 'Auto layout', autoLayoutTitle: 'Throw away positions set by hand and lay the diagram out again',
     draft: 'Unsaved changes from {t} were found for this page.', restore: 'Restore', discard: 'Discard',
     saved: 'Draft saved at {t}.', drop: 'Drop a .json or draw.io file to open it', opened: 'Opened {f}.',
-    dragHint: 'Drag a block to move it; double-click it to edit its text on the drawing.\nShift + drag from one block to another draws a connection; the pins show their names.\nShift + click blocks, or Shift + drag on empty space, to select several; Ctrl+A selects all.\nCtrl+C and Ctrl+V copy and paste (also into another page); Ctrl+D duplicates; Delete removes.\nDrop a block inside a group frame to put it in that group; drag it out to take it out.\nDrag empty space to move around; Ctrl + wheel zooms.',
+    dragHint: 'Drag a block to move it; double-click it to edit its text on the drawing.\nShift + drag from one block to another draws a connection; the pins show their names.\nShift + click blocks, or Shift + drag on empty space, to select several; Ctrl+A selects all.\nCtrl+C and Ctrl+V copy and paste (also into another page); Ctrl+D duplicates; Delete removes.\nDrop a block inside a group frame to put it in that group; drag it out to take it out.\nWith one block selected, the suggested next block shows faintly: Tab adds it, a click elsewhere drops it. Keys 1 to 8 apply the suggestion with that number.\nDrag empty space to move around; Ctrl + wheel zooms.',
     selN: '{x} blocks selected. Drag one of them to move them all.', copiedN: 'Copied {x} blocks.', lPaste2: 'Paste {x} blocks', lAlign: 'Line up {x} blocks',
     lGroupIn: 'Put {x} into group {y}', lGroupOut: 'Take {x} out of group {y}',
     alignLeft: 'Align left edges', alignCenter: 'Align centers (vertical line)', alignRight: 'Align right edges', alignTop: 'Align top edges',
@@ -104,7 +104,7 @@ var EDT = {
     autoLayout: 'Tự dàn trang lại', autoLayoutTitle: 'Bỏ các vị trí đã kéo tay và để tool tự dàn trang lại',
     draft: 'Có bản nháp chưa lưu của trang này từ lúc {t}.', restore: 'Khôi phục', discard: 'Bỏ qua',
     saved: 'Đã lưu nháp lúc {t}.', drop: 'Thả file .json hoặc file draw.io vào đây để mở', opened: 'Đã mở {f}.',
-    dragHint: 'Kéo một khối để dời chỗ; bấm đúp để sửa chữ ngay trên hình.\nGiữ Shift rồi kéo từ khối này sang khối khác để nối dây; các chân hiện tên khi kéo tới.\nGiữ Shift rồi bấm từng khối, hoặc giữ Shift rồi kéo trên chỗ trống, để chọn nhiều khối; Ctrl+A chọn tất cả.\nCtrl+C và Ctrl+V để chép và dán, dán được sang trang khác; Ctrl+D để nhân bản; phím Delete để xóa.\nThả khối vào trong khung nhóm thì khối vào nhóm đó; kéo ra ngoài khung thì khối ra khỏi nhóm.\nKéo chỗ trống để di chuyển khung nhìn; Ctrl + lăn chuột để phóng to hoặc thu nhỏ.',
+    dragHint: 'Kéo một khối để dời chỗ; bấm đúp để sửa chữ ngay trên hình.\nGiữ Shift rồi kéo từ khối này sang khối khác để nối dây; các chân hiện tên khi kéo tới.\nGiữ Shift rồi bấm từng khối, hoặc giữ Shift rồi kéo trên chỗ trống, để chọn nhiều khối; Ctrl+A chọn tất cả.\nCtrl+C và Ctrl+V để chép và dán, dán được sang trang khác; Ctrl+D để nhân bản; phím Delete để xóa.\nThả khối vào trong khung nhóm thì khối vào nhóm đó; kéo ra ngoài khung thì khối ra khỏi nhóm.\nKhi chọn một khối, khối nên vẽ tiếp hiện mờ trên hình: bấm Tab để thêm, bấm chỗ khác để bỏ qua. Phím số 1 đến 8 làm theo gợi ý mang số đó.\nKéo chỗ trống để di chuyển khung nhìn; Ctrl + lăn chuột để phóng to hoặc thu nhỏ.',
     selN: 'Đang chọn {x} khối. Kéo một khối trong số đó để dời cả nhóm.', copiedN: 'Đã chép {x} khối.', lPaste2: 'Dán {x} khối', lAlign: 'Căn {x} khối',
     lGroupIn: 'Đưa {x} vào nhóm {y}', lGroupOut: 'Đưa {x} ra khỏi nhóm {y}',
     alignLeft: 'Căn mép trái', alignCenter: 'Căn giữa theo trục dọc', alignRight: 'Căn mép phải', alignTop: 'Căn mép trên',
@@ -306,6 +306,7 @@ var edRenderTimer = null, edUndoTimer = null, edDraftTimer = null;
 function edLabel(text) { if (ED && !ED.pendingLabel) ED.pendingLabel = text; }
 function edChanged(rebuildForm, label) {
   if (!ED) return;
+  if (ED.heal && --ED.heal.left <= 0) ED.heal = null;
   if (label) ED.pendingLabel = label;
   ED.dirty = true;
   if (rebuildForm) edBuildForm();
@@ -366,7 +367,7 @@ function edDraftKey() { return 'architecture-diagrams-draft:' + location.pathnam
 function edSaveDraft() {
   if (!ED) return;
   try { window.localStorage.setItem(edDraftKey(), JSON.stringify({ t: Date.now(), raw: ED.raw })); } catch (e) { return; }
-  if (ED.status) ED.status.textContent = et('saved').replace('{t}', edNow());
+  if (ED.status && !(ED.statusHold && Date.now() < ED.statusHold)) ED.status.textContent = et('saved').replace('{t}', edNow());
 }
 function edOfferDraft() {
   var saved = null;
@@ -627,17 +628,10 @@ function edBuildJson() {
   var err = H('div', { class: 'ed-err', 'aria-live': 'polite' });
   var apply = H('button', { type: 'button', class: 'tb-btn', text: et('apply') + ' (Ctrl+Enter)' });
   var run = function () {
-    var parsed, text = area.value.trim(), fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    /* an answer pasted straight from an AI chat may still carry its code fence */
-    if (fence) text = fence[1];
-    try { parsed = JSON.parse(text); } catch (e) { err.textContent = et('jsonBad') + ' ' + e.message; return; }
-    if (!parsed || typeof parsed !== 'object') { err.textContent = et('jsonBad'); return; }
-    err.textContent = '';
-    edPushUndo();
-    ED.raw = edCanonical(parsed);
-    ED.diag = Math.min(ED.diag, Math.max(0, ED.raw.diagrams.length - 1));
-    edChanged(false, et('lJson'));
-    edRender();
+    /* a whole spec replaces the document; {"ops": [...]} changes the open tab (see edApplyAnswer in assist.js) */
+    var msg = edApplyAnswer(area.value);
+    err.textContent = msg || '';
+    if (!msg) area.value = JSON.stringify(ED.raw, null, 2);
   };
   apply.addEventListener('click', run);
   area.addEventListener('keydown', function (ev) { if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') { ev.preventDefault(); run(); } });
@@ -961,8 +955,12 @@ function edBuildForm() {
   pick.appendChild(H('label', { text: et('diagram') }));
   [sel, addMenu, dup, del].forEach(function (x) { pick.appendChild(x); });
   ED.body.appendChild(pick);
+  var start = edStartPanel();
+  if (start) ED.body.appendChild(start);
   ED.checksBox = H('div', { class: 'ed-checks', 'aria-live': 'polite' });
   ED.body.appendChild(ED.checksBox);
+  ED.suggestBox = H('div', { class: 'ed-suggest', hidden: true });
+  ED.body.appendChild(ED.suggestBox);
 
   var d = edDiagram(), type = edTypeOf(d);
   if (type === 'graph') edFormGraph(d);
@@ -975,6 +973,11 @@ function edBuildForm() {
   edMarkSelection();
   edApplyMarks();
   edRefreshChecks();
+  if (ED.focusRow) {
+    var fr = ED.body.querySelector('.ed-row[data-key="' + edCss(ED.focusRow) + '"]'), ft = fr && fr.querySelector('textarea');
+    ED.focusRow = null;
+    if (ft) { ft.focus(); ft.select(); fr.scrollIntoView({ block: 'nearest' }); }
+  }
 }
 /* Sub-tabs of the form: each part of a diagram (blocks, connections, settings…) has its own pane. */
 function edPanes(defs) {
@@ -1051,6 +1054,7 @@ function edRefreshChecks() {
   (ED.wires || []).forEach(function (w) { items.push({ w: w, pane: edWireOnNode(w) ? 'nodes' : 'edges', text: w.text }); });
   var mine = st ? '[' + (st.d.title || st.d.id) + '] ' : null;
   problemList.forEach(function (p) { if (!(ED_COVERED[p.key] && p.where === mine)) items.push({ text: p.text }); });
+  items.forEach(function (it) { it.fixes = edFixesFor(it); });
   box.textContent = '';
   box.classList.toggle('ok', !items.length);
   var counts = {};
@@ -1060,14 +1064,19 @@ function edRefreshChecks() {
   var open = ED.checksOpen !== false;
   var toggle = H('button', { type: 'button', class: 'ed-chk-toggle', 'aria-expanded': open ? 'true' : 'false', text: open ? et('checksHide') : et('checksShow') });
   toggle.addEventListener('click', function () { ED.checksOpen = !open; edRefreshChecks(); });
-  box.appendChild(H('div', { class: 'ed-chk-head' }, [H('strong', { text: '⚠ ' + et('checksN').replace('{x}', items.length) }), toggle]));
+  var safe = edSafeCount(items), all = null;
+  if (safe) {
+    all = H('button', { type: 'button', class: 'ed-fix safe ed-fixall', title: at('fixAllTitle'), text: '⚡ ' + asl('fixAll', safe) });
+    all.addEventListener('click', edFixAll);
+  }
+  box.appendChild(H('div', { class: 'ed-chk-head' }, [H('strong', { text: '⚠ ' + et('checksN').replace('{x}', items.length) }), all, toggle]));
   if (!open) return;
   var ul = H('ul', { class: 'ed-chk-list' });
   items.slice(0, 80).forEach(function (it) {
     var go = it.q || it.w;
     var b = H(go ? 'button' : 'span', { type: go ? 'button' : null, class: 'ed-chk-item', text: it.text });
     if (go) b.addEventListener('click', function () { edGoToIssue(it); });
-    ul.appendChild(H('li', {}, [b]));
+    ul.appendChild(H('li', {}, [b, it.fixes.length ? edFixBar(it.fixes) : null]));
   });
   if (items.length > 80) ul.appendChild(H('li', { class: 'ed-hint', text: '… +' + (items.length - 80) }));
   box.appendChild(ul);
@@ -1165,7 +1174,7 @@ function edParseVal(v) {
 }
 function edValidate(d) {
   var out = [];
-  var add = function (pane, vk, where, field, text, sec) { out.push({ pane: pane, vk: vk, where: where, field: field, text: text, sec: sec || null }); };
+  var add = function (pane, vk, where, field, text, sec, code) { out.push({ pane: pane, vk: vk, where: where, field: field, text: text, sec: sec || null, code: code || null }); };
   var type = edTypeOf(d);
   if (type === 'graph') edCheckGraph(d, add);
   else if (type === 'wave') edCheckWave(d, add);
@@ -1187,13 +1196,13 @@ function edCheckGraph(d, add) {
   (Array.isArray(d.nodes) ? d.nodes : []).forEach(function (n, i) {
     if (!n || typeof n !== 'object') return;
     var id = str(n.id), vk = 'nodes:' + i + ':', where = et('nodes') + ' ' + (id || '#' + (i + 1));
-    if (!id) add('nodes', vk + 'id', where, ec('id'), vt('required'));
-    else if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(id)) add('nodes', vk + 'id', where, ec('id'), vt('idChars'));
-    else if (nodeIds[id]) add('nodes', vk + 'id', where, ec('id'), vt('idDup'));
+    if (!id) add('nodes', vk + 'id', where, ec('id'), vt('required'), null, 'idReq');
+    else if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(id)) add('nodes', vk + 'id', where, ec('id'), vt('idChars'), null, 'idChars');
+    else if (nodeIds[id]) add('nodes', vk + 'id', where, ec('id'), vt('idDup'), null, 'idDup');
     if (id) nodeIds[id] = true;
-    if (edHas(n.shape) && !edShapeKnown(n.shape)) add('nodes', vk + 'shape', where, ec('shape'), vt('shape', str(n.shape)));
-    if (edHas(n.group) && !groupIds[str(n.group)]) add('nodes', vk + 'group', where, ec('group'), vt('group', str(n.group)));
-    if (edIconBad(n.icon)) add('nodes', vk + 'icon', where, ec('icon'), vt('icon', str(n.icon)));
+    if (edHas(n.shape) && !edShapeKnown(n.shape)) add('nodes', vk + 'shape', where, ec('shape'), vt('shape', str(n.shape)), null, 'shape');
+    if (edHas(n.group) && !groupIds[str(n.group)]) add('nodes', vk + 'group', where, ec('group'), vt('group', str(n.group)), null, 'group');
+    if (edIconBad(n.icon)) add('nodes', vk + 'icon', where, ec('icon'), vt('icon', str(n.icon)), null, 'icon');
     ['w', 'h'].forEach(function (k) { if (edHas(n[k]) && !(+n[k] > 0)) add('nodes', vk + k, where, ec(k), vt('positive')); });
     ['x', 'y'].forEach(function (k) { if (edHas(n[k]) && !isFinite(+n[k])) add('nodes', vk + k, where, ec(k), vt('number', str(n[k]))); });
     var ports = n.ports && typeof n.ports === 'object' ? n.ports : {};
@@ -1212,7 +1221,7 @@ function edCheckGraph(d, add) {
       if (!v) { if (!(manual && normPt(e[k + 'Point']))) add('edges', vk + k, where, ec(k), vt('required')); return; }
       if (nodeIds[v]) return;
       if (groupIds[v]) { if (!manual) add('edges', vk + k, where, ec(k), vt('endGroupAuto')); return; }
-      add('edges', vk + k, where, ec(k), vt('end', v));
+      add('edges', vk + k, where, ec(k), vt('end', v), null, 'end');
     });
     edCheckStyle(e.style, 'edges', vk, where, add);
   });
@@ -1226,11 +1235,11 @@ function edCheckGraph(d, add) {
     if (id) seen[id] = true;
     var parent = str(g.parent);
     if (parent) {
-      if (!groupIds[parent] || parent === id) add('groups', vk + 'parent', where, ec('parent'), vt('group', parent));
+      if (!groupIds[parent] || parent === id) add('groups', vk + 'parent', where, ec('parent'), vt('group', parent), null, 'parent');
       else {
         var walk = parent, hops = 0;
         while (walk && groupIds[walk] && walk !== id && hops++ < 200) walk = str(groupIds[walk].parent);
-        if (walk === id) add('groups', vk + 'parent', where, ec('parent'), vt('parentLoop'));
+        if (walk === id) add('groups', vk + 'parent', where, ec('parent'), vt('parentLoop'), null, 'parent');
       }
     }
     if (edIconBad(g.icon)) add('groups', vk + 'icon', where, ec('icon'), vt('icon', str(g.icon)));
@@ -1238,10 +1247,10 @@ function edCheckGraph(d, add) {
   (Array.isArray(d.steps) ? d.steps : []).forEach(function (s, i) {
     if (!s || typeof s !== 'object') return;
     var vk = 'steps:' + i + ':', where = et('stepsShort') + ' ' + (i + 1);
-    if (edHas(s.node)) { if (!nodeIds[str(s.node)]) add('steps', vk + 'target', where, ec('target'), vt('end', str(s.node))); }
+    if (edHas(s.node)) { if (!nodeIds[str(s.node)]) add('steps', vk + 'target', where, ec('target'), vt('end', str(s.node)), null, 'step'); }
     else if (Array.isArray(s.edge) && s.edge.length === 2) {
       var ok = (d.edges || []).some(function (e) { return e && str(e.from) === str(s.edge[0]) && str(e.to) === str(s.edge[1]); });
-      if (!ok) add('steps', vk + 'target', where, ec('target'), vt('step'));
+      if (!ok) add('steps', vk + 'target', where, ec('target'), vt('step'), null, 'step');
     } else add('steps', vk + 'target', where, ec('target'), vt('required'));
   });
 }
@@ -1495,6 +1504,7 @@ function edFormGraph(d) {
   var P = edPanes([['nodes', et('nodes'), d.nodes.length], ['edges', et('edges'), d.edges.length], ['groups', et('groups'), (d.groups || []).length],
                    ['steps', et('stepsShort'), (d.steps || []).length], ['legend', et('legend')], ['setup', et('setup')]]);
 
+  edPatternSection(P.nodes);
   edPalette(d, P.nodes);
   var groupsOpts = function () { return [['', et('none')]].concat((d.groups || []).map(function (g) { return [g.id, g.id + (g.label ? ' · ' + g.label : '')]; })); };
   P.nodes.appendChild(edTable({
@@ -1507,17 +1517,18 @@ function edFormGraph(d) {
         edRenameNode(d, n.id, nv);
         n.id = nv;
       } },
-      { k: 'title', label: ec('title'), type: 'area', hint: h.title, aliases: ['name', 'tên'] },
-      { k: 'shape', label: ec('shape'), w: '21%', type: 'combo', list: 'ed-shapes', ph: 'card', hint: h.shape, set: function (n, v) { setOrDelete(n, 'shape', String(v || '').trim()); } },
+      { k: 'title', label: ec('title'), type: 'area', hint: h.title, aliases: ['name', 'tên'], onFocus: edFocusNode },
+      { k: 'shape', label: ec('shape'), w: '21%', type: 'combo', list: 'ed-shapes', ph: 'card', hint: h.shape, onFocus: edFocusNode, set: function (n, v) { setOrDelete(n, 'shape', String(v || '').trim()); } },
       { k: 'color', label: ec('color'), w: '14%', type: 'select', options: paletteOptions(true) },
       { k: 'group', label: ec('group'), w: '14%', type: 'select', options: groupsOpts }
     ],
-    add: function () {
+    add: function (fromPaste) {
       var n = { id: edUniqueId(d.nodes, 'n' + (d.nodes.length + 1)), title: lang === 'vi' ? 'Khối mới' : 'New block' };
       if (manual) edPlaceNew(d, n);
+      if (!fromPaste) { ED.selected = { id: n.id }; ED.multi = null; ED.focusRow = 'n:' + n.id; }
       return n;
     },
-    onDelete: function (gone) { if (gone) { d.edges = d.edges.filter(function (e) { return e.from !== gone.id && e.to !== gone.id; }); } },
+    onDelete: function (gone) { if (gone) { edKeepHeal(asHealPairs(d, [gone.id])); d.edges = d.edges.filter(function (e) { return e.from !== gone.id && e.to !== gone.id; }); } },
     onDuplicate: function (copy) { copy.id = edUniqueId(d.nodes, copy.id); if (copy.x !== undefined) { copy.x += 30; copy.y += 30; } },
     extra: function (n) { return edNodeDetails(d, n); }
   }));
@@ -1771,19 +1782,7 @@ function edPlaceNew(d, n) {
 function edFreeze(d) {
   var st = edStateFor(d);
   if (!st || st.d.kind !== 'graph' || !st.L) { d.layout = 'manual'; edChanged(true); return; }
-  d.layout = 'manual';
-  if (!d.route) d.route = 'spline';
-  st.d.nodes.forEach(function (n) {
-    var raw = (d.nodes || []).filter(function (x) { return str(x.id) === n.id; })[0], p = st.L.nodes[n.id];
-    if (!raw || !p) return;
-    raw.x = Math.round(p.x - p.w / 2);
-    raw.y = Math.round(p.y - p.h / 2);
-  });
-  st.d.edges.forEach(function (e, i) {
-    var raw = d.edges[e.rawIndex], pts = st.L.edges[i] && st.L.edges[i].points;
-    if (!raw || !pts || pts.length < 3 || raw.points) return;
-    raw.points = pts.slice(1, -1).map(function (q) { return [Math.round(q.x), Math.round(q.y)]; });
-  });
+  asFreeze(d, st);
   edChanged(true, et('lFreeze'));
 }
 function edAutoLayout(d) {
@@ -2039,6 +2038,7 @@ function edMarkSelection() {
   if (!ED || !ED.body) return;
   Array.prototype.forEach.call(ED.body.querySelectorAll('.ed-row.sel'), function (tr) { tr.classList.remove('sel'); });
   edDrawOverlay();
+  edRefreshSuggest();
   if (!ED.selected) return;
   if (ED.multi) ED.multi.forEach(function (id) { var r = ED.body.querySelector('.ed-row[data-key="' + edCss('n:' + id) + '"]'); if (r) r.classList.add('sel'); });
   var key = ED.selected.id !== undefined ? 'n:' + ED.selected.id : 'e:' + ED.selected.edge;
@@ -2090,6 +2090,7 @@ function edDrawOverlay() {
     var p = st.L.nodes[sel.id], n = st.d.nodeById[sel.id], x0 = p.x - p.w / 2, y0 = p.y - p.h / 2;
     if (pinList(shapeDef(n.shape)).length) { var pl = S('g', { class: 'ed-pins', 'pointer-events': 'none' }); edPinMarks(pl, st, sel.id, null, true); ov.appendChild(pl); }
     ov.appendChild(S('rect', { class: 'ed-box', x: fmt(x0), y: fmt(y0), width: fmt(p.w), height: fmt(p.h), fill: 'none', style: ED_ACCENT + 'stroke-dasharray:4 3', 'stroke-width': fmt(1.2 * k), 'pointer-events': 'none' }));
+    edDrawGhost(st, sel.id);
     if (!(n.style.rotation)) {
       var pos = { nw: [0, 0], n: [0.5, 0], ne: [1, 0], e: [1, 0.5], se: [1, 1], s: [0.5, 1], sw: [0, 1], w: [0, 0.5] };
       var cursor = { nw: 'nwse', se: 'nwse', ne: 'nesw', sw: 'nesw', n: 'ns', s: 'ns', e: 'ew', w: 'ew' };
@@ -2121,7 +2122,7 @@ function edDrawOverlay() {
   } else return;
   root.appendChild(ov);
 }
-function edHideEdgeBar() { if (ED && ED.edgeBar) ED.edgeBar.remove(); if (ED && ED.selBar) ED.selBar.remove(); }
+function edHideEdgeBar() { if (ED && ED.edgeBar) ED.edgeBar.remove(); if (ED && ED.selBar) ED.selBar.remove(); edClearGhost(); }
 function edShowEdgeBar(st, i) {
   var e = st.d.edges[i], d = edDiagram(), raw = d.edges[e.rawIndex];
   if (!raw) return;
@@ -2674,10 +2675,27 @@ function edAlignSel(ids, mode) {
 function edDeleteSelection() {
   var d = edDiagram(), ids = edSelIds();
   if (!ids.length) return;
+  var heal = edTypeOf(d) === 'graph' ? asHealPairs(d, ids) : [];
   ids.forEach(function (id) { edRemoveNode(d, id); });
   ED.selected = null;
   ED.multi = null;
+  edKeepHeal(heal);
   edChanged(true, el('lDelNode', ids.join(', ')));
+  if (heal.length) edHoldStatus(asl('healHint', asName(asNodes(d)[heal[0].from]), asName(asNodes(d)[heal[0].to])));
+}
+/* What joined a deleted block's two neighbours, offered for the next few steps (first in the suggestions). */
+function edKeepHeal(pairs) { ED.heal = pairs && pairs.length ? { diag: ED.diag, pairs: pairs, left: 4 } : null; }
+/* The page's own tab buttons still switch the drawing while editing: the editor follows, so edits go to the tab on screen. */
+function edFollowTab(id) {
+  if (!ED || !ED.raw) return;
+  var k = -1;
+  ED.raw.diagrams.forEach(function (d, i) { if ((str(d.id).replace(/[^A-Za-z0-9_.-]/g, '-') || ('diagram-' + (i + 1))) === id) k = i; });
+  if (k < 0 || k === ED.diag) return;
+  ED.diag = k;
+  ED.selected = null;
+  ED.multi = null;
+  edBuildForm();
+  edRender();
 }
 /* Copy and paste: the blocks and the connections between them, also between pages through the clipboard. */
 function edCopyClip(ids) {
@@ -2741,11 +2759,24 @@ function edNudge(dx, dy) {
 }
 function edKey(ev) {
   if (!ED) return;
+  /* was the last thing a click (Tab then autocompletes) or a key that moves the focus (Tab keeps moving it)? */
+  var byPointer = ED.lastInput === 'pointer';
+  if (ev.key === 'Tab' || ev.key === 'Enter' || ev.key === ' ') ED.lastInput = 'key';
   var typing = edTyping(ev), mod = ev.ctrlKey || ev.metaKey, key = (ev.key || '').toLowerCase();
   if (mod && !typing && key === 'z') { ev.preventDefault(); edUndoRedo(!ev.shiftKey); return; }
   if (mod && !typing && key === 'y') { ev.preventDefault(); edUndoRedo(false); return; }
   if (mod && key === 's') { ev.preventDefault(); edSaveHtml(); return; }
   if (typing || !active || active.d.kind !== 'graph') return;
+  /* Tab takes the faint suggested block, like autocomplete: with the focus on the page, or on the block just
+     clicked. A block or a button reached with the keyboard keeps Tab for moving on; the keys 1 to 8 work there. */
+  var ae = document.activeElement, inBar = ae && ae.closest && ae.closest('.ed-edgebar, .ed-ghostbar');
+  var onPage = !ae || ae === document.body || (byPointer && !inBar && active.canvas && active.canvas.contains(ae));
+  if (ev.key === 'Tab' && !mod && !ev.shiftKey && onPage && ED.ghost && ED.selected && ED.selected.id === ED.ghost.id) { ev.preventDefault(); ED.lastInput = 'pointer'; edAcceptGhost(); return; }
+  if (!mod && !ev.altKey && /^[1-8]$/.test(ev.key) && ED.sgList && ED.sgList[+ev.key - 1] && ED.suggestBox && !ED.suggestBox.hidden) {
+    ev.preventDefault();
+    edApplySuggestion(ED.sgList[+ev.key - 1]);
+    return;
+  }
   if (mod && key === 'a') { ev.preventDefault(); edSetSelection(Object.keys(active.L.nodes)); return; }
   if (mod && key === 'd') { var dup = edSelIds(); if (dup.length) { ev.preventDefault(); edPasteClip(edCopyClip(dup)); } return; }
   if (!ED.selected && !(ED.multi && ED.multi.length)) return;
@@ -2898,6 +2929,7 @@ function installCanvasGestures() {
 }
 
 function installEditor() {
+  document.addEventListener('pointerdown', function () { if (ED) ED.lastInput = 'pointer'; }, true);
   document.addEventListener('pointerdown', edPointerDown);
   window.addEventListener('pointermove', edPointerMove);
   window.addEventListener('pointerup', edPointerUp);

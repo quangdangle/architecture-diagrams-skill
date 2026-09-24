@@ -1,0 +1,816 @@
+{
+  "about": "Ready-made patterns for the editor's Patterns list and the MCP tool diagram_insert_pattern. Node x/y are the top-left corner in the pattern's own coordinates; an end written \"id.PIN\" is fixed to that pin of the symbol. inputs, outputs and clocks name the pins the tool may wire to the selected block; entry names the block a selected block connects to when the pattern has no pins; a clock net gets its own clock source only when the diagram has none yet.",
+  "patterns": [
+    {
+      "id": "sync2", "cat": "chip", "pins": true, "cdc": true, "top": true,
+      "title": {"en": "2-flop synchronizer", "vi": "Bộ đồng bộ 2 tầng"},
+      "desc": {"en": "Two flip-flops in the destination clock domain. Use it when a 1-bit signal enters another clock domain.", "vi": "Hai flip-flop nối tiếp ở miền clock đích. Dùng khi tín hiệu 1 bit đi sang miền clock khác."},
+      "keywords": "cdc synchronizer double flop 2ff 2-ff metastability sync dong bo mien clock",
+      "nodes": [
+        {"id": "sync1", "shape": "dff", "title": "sync1", "x": 0, "y": 0},
+        {"id": "sync2", "shape": "dff", "title": "sync2", "x": 130, "y": 0}
+      ],
+      "edges": [
+        {"from": "sync1.Q", "to": "sync2.D"}
+      ],
+      "inputs": [
+        {"pins": ["sync1.D"], "label": {"text": "d_async", "x": -110, "y": 9.6, "w": 72, "h": 24}}
+      ],
+      "outputs": ["sync2.Q"],
+      "outLabels": [
+        {"pin": "sync2.Q", "text": "d_sync", "x": 230, "y": 9.6, "w": 64, "h": 24}
+      ],
+      "clocks": [
+        {"pins": ["sync1.CLK", "sync2.CLK"], "title": "clk_dst", "at": [-100, 110]}
+      ]
+    },
+    {
+      "id": "rstsync", "cat": "chip", "pins": true, "top": true, "reverseTo": ["RST_N", "RSTN", "RST", "RESET_N", "RESET", "CLR_N", "CLR"], "outKind": "reset",
+      "title": {"en": "Reset synchronizer", "vi": "Bộ đồng bộ reset"},
+      "desc": {"en": "Reset takes effect at once (asynchronous) and is released on a clock edge (synchronous), so every flop leaves reset in the same cycle.", "vi": "Reset có hiệu lực ngay (bất đồng bộ) và được nhả theo cạnh clock (đồng bộ), nên mọi flip-flop ra khỏi reset trong cùng một chu kỳ."},
+      "keywords": "reset synchronizer async assert sync deassert release rst_n arst por dong bo reset",
+      "nodes": [
+        {"id": "tie1", "shape": "text", "title": "1'b1", "x": 0, "y": 13, "w": 46, "h": 22},
+        {"id": "rst_meta", "shape": "dffr", "title": "rst_meta", "x": 80, "y": 0},
+        {"id": "rst_sync", "shape": "dffr", "title": "rst_sync_n", "x": 210, "y": 0}
+      ],
+      "edges": [
+        {"from": "tie1", "to": "rst_meta.D"},
+        {"from": "rst_meta.Q", "to": "rst_sync.D"}
+      ],
+      "inputs": [
+        {"pins": ["rst_meta.RST_N", "rst_sync.RST_N"], "kind": "reset", "label": {"text": "arst_n", "x": 0, "y": 124, "w": 64, "h": 24}}
+      ],
+      "outputs": ["rst_sync.Q"],
+      "outLabels": [
+        {"pin": "rst_sync.Q", "text": "rst_n", "x": 310, "y": 11.5, "w": 52, "h": 24, "kind": "reset"}
+      ],
+      "clocks": [
+        {"pins": ["rst_meta.CLK", "rst_sync.CLK"], "title": "clk", "at": [-110, 170]}
+      ]
+    },
+    {
+      "id": "icg", "cat": "chip", "pins": true, "clockOut": true,
+      "title": {"en": "Clock gate (latch and AND gate)", "vi": "Cổng clock dùng latch và cổng AND"},
+      "desc": {"en": "The latch holds the enable while the clock is high, so the gated clock never gets a glitch.", "vi": "Latch giữ tín hiệu enable trong lúc clock ở mức cao, nhờ vậy clock sau cổng không bị xung nhiễu."},
+      "keywords": "icg clock gate gating latch enable glitch free cong clock",
+      "nodes": [
+        {"id": "inv", "shape": "not", "title": "inv", "x": 20, "y": 34},
+        {"id": "en_latch", "shape": "latch", "title": "en_latch", "x": 100, "y": 0},
+        {"id": "gclk_and", "shape": "and", "title": "gclk_and", "x": 210, "y": 14}
+      ],
+      "edges": [
+        {"from": "inv.Y", "to": "en_latch.EN"},
+        {"from": "en_latch.Q", "to": "gclk_and.A"}
+      ],
+      "inputs": [
+        {"pins": ["en_latch.D"], "label": {"text": "en", "x": 36, "y": 5, "w": 36, "h": 22}}
+      ],
+      "outputs": ["gclk_and.Y"],
+      "outLabels": [
+        {"pin": "gclk_and.Y", "text": "gclk", "x": 310, "y": 24, "w": 48, "h": 24, "kind": "clock"}
+      ],
+      "clocks": [
+        {"pins": ["inv.A", "gclk_and.B"], "title": "clk", "at": [-80, 110]}
+      ]
+    },
+    {
+      "id": "pulsesync", "cat": "chip", "pins": true, "cdc": true,
+      "title": {"en": "Pulse synchronizer", "vi": "Bộ đồng bộ xung"},
+      "desc": {"en": "A one-cycle pulse becomes a level change in the source domain, crosses through two flip-flops, and an XOR turns it back into a one-cycle pulse in the destination domain.", "vi": "Xung một chu kỳ được đổi thành một lần đảo mức ở miền nguồn, đi qua hai flip-flop, rồi cổng XOR đổi lại thành xung một chu kỳ ở miền đích."},
+      "keywords": "pulse synchronizer toggle cdc xor single cycle pulse event crossing dong bo xung mien clock",
+      "nodes": [
+        {"id": "xt", "shape": "xor", "title": "toggle", "x": 60, "y": 0, "domain": "src"},
+        {"id": "tog", "shape": "dff", "title": "tog", "x": 170, "y": 0.4, "domain": "src"},
+        {"id": "s1", "shape": "dff", "title": "s1", "x": 320, "y": 0.4},
+        {"id": "s2", "shape": "dff", "title": "s2", "x": 450, "y": 0.4},
+        {"id": "s3", "shape": "dff", "title": "s3", "x": 580, "y": 0.4},
+        {"id": "xo", "shape": "xor", "title": "edge", "x": 700, "y": -8.8}
+      ],
+      "edges": [
+        {"from": "xt.Y", "to": "tog.D"},
+        {"from": "tog.Q", "to": "xt.A", "points": [[246, 22], [246, -24], [40, -24], [40, 13.2]]},
+        {"from": "tog.Q", "to": "s1.D"},
+        {"from": "s1.Q", "to": "s2.D"},
+        {"from": "s2.Q", "to": "s3.D"},
+        {"from": "s3.Q", "to": "xo.B"},
+        {"from": "s2.Q", "to": "xo.A", "points": [[526, 22], [526, -30], [680, -30], [680, 4.4]]}
+      ],
+      "inputs": [
+        {"pins": ["xt.B"], "label": {"text": "pulse_in", "x": -90, "y": 18.8, "w": 72, "h": 24}}
+      ],
+      "outputs": ["xo.Y"],
+      "outLabels": [
+        {"pin": "xo.Y", "text": "pulse_out", "x": 800, "y": 1.2, "w": 76, "h": 24}
+      ],
+      "clocks": [
+        {"pins": ["s1.CLK", "s2.CLK", "s3.CLK"], "title": "clk_dst", "at": [250, 110]},
+        {"pins": ["tog.CLK"], "title": "clk_src", "at": [80, 110], "domain": "src"}
+      ]
+    },
+    {
+      "id": "clkdiv2", "cat": "chip", "pins": true, "clockOut": true, "top": true,
+      "title": {"en": "Clock divider by 2", "vi": "Bộ chia clock cho 2"},
+      "desc": {"en": "The flip-flop feeds its inverted output back to its input, so it toggles on every clock edge and Q runs at half the clock frequency.", "vi": "Flip-flop đưa ngõ ra đảo về ngõ vào nên đổi trạng thái ở mỗi cạnh clock; Q có tần số bằng một nửa clock."},
+      "keywords": "clock divider divide by two toggle half frequency tff chia clock chia tan so",
+      "nodes": [
+        {"id": "div2", "shape": "dff", "title": "div2", "x": 0, "y": 0}
+      ],
+      "edges": [
+        {"from": "div2.QN", "to": "div2.D", "points": [[76, 56.16], [76, -24], [-24, -24], [-24, 21.6]]}
+      ],
+      "outputs": ["div2.Q"],
+      "outLabels": [
+        {"pin": "div2.Q", "text": "clk_div2", "x": 110, "y": 9.6, "w": 72, "h": 24, "kind": "clock"}
+      ],
+      "clocks": [
+        {"pins": ["div2.CLK"], "title": "clk", "at": [-110, 30]}
+      ]
+    },
+    {
+      "id": "edgedet", "cat": "chip", "pins": true,
+      "title": {"en": "Rising-edge detector", "vi": "Bộ phát hiện sườn lên"},
+      "desc": {"en": "A flip-flop keeps last cycle's value; the AND gate gives a one-cycle pulse when the signal goes from 0 to 1.", "vi": "Flip-flop giữ giá trị của chu kỳ trước; cổng AND cho ra một xung dài một chu kỳ khi tín hiệu chuyển từ 0 lên 1."},
+      "keywords": "edge detector rising edge posedge pulse one shot phat hien suon len xung",
+      "nodes": [
+        {"id": "dly", "shape": "dff", "title": "sig_d", "x": 60, "y": 0},
+        {"id": "inv", "shape": "not", "title": "inv", "x": 170, "y": 3.6},
+        {"id": "and1", "shape": "and", "title": "rise", "x": 270, "y": -9.2}
+      ],
+      "edges": [
+        {"from": "dly.Q", "to": "inv.A"},
+        {"from": "inv.Y", "to": "and1.B"}
+      ],
+      "inputs": [
+        {"pins": ["dly.D", "and1.A"], "via": {"and1.A": [[40, -30], [250, -30], [250, 4]]}, "label": {"text": "sig", "x": -80, "y": -42, "w": 40, "h": 24}}
+      ],
+      "outputs": ["and1.Y"],
+      "outLabels": [
+        {"pin": "and1.Y", "text": "rise", "x": 370, "y": 0.8, "w": 48, "h": 24}
+      ],
+      "clocks": [
+        {"pins": ["dly.CLK"], "title": "clk", "at": [-70, 60]}
+      ]
+    },
+    {
+      "id": "shiftreg", "cat": "chip", "pins": true,
+      "title": {"en": "4-bit shift register", "vi": "Thanh ghi dịch 4 bit"},
+      "desc": {"en": "Each clock edge moves the data one flip-flop to the right: a bit that enters at sin leaves at sout four cycles later.", "vi": "Mỗi cạnh clock dịch dữ liệu sang phải một flip-flop: bit vào ở sin sẽ ra ở sout sau 4 chu kỳ."},
+      "keywords": "shift register serial in serial out siso delay line pipeline thanh ghi dich",
+      "nodes": [
+        {"id": "sr0", "shape": "dff", "title": "sr0", "x": 0, "y": 0},
+        {"id": "sr1", "shape": "dff", "title": "sr1", "x": 130, "y": 0},
+        {"id": "sr2", "shape": "dff", "title": "sr2", "x": 260, "y": 0},
+        {"id": "sr3", "shape": "dff", "title": "sr3", "x": 390, "y": 0}
+      ],
+      "edges": [
+        {"from": "sr0.Q", "to": "sr1.D"},
+        {"from": "sr1.Q", "to": "sr2.D"},
+        {"from": "sr2.Q", "to": "sr3.D"}
+      ],
+      "inputs": [
+        {"pins": ["sr0.D"], "label": {"text": "sin", "x": -80, "y": 9.6, "w": 44, "h": 24}}
+      ],
+      "outputs": ["sr3.Q"],
+      "outLabels": [
+        {"pin": "sr3.Q", "text": "sout", "x": 490, "y": 9.6, "w": 48, "h": 24}
+      ],
+      "clocks": [
+        {"pins": ["sr0.CLK", "sr1.CLK", "sr2.CLK", "sr3.CLK"], "title": "clk", "at": [-100, 110]}
+      ]
+    },
+    {
+      "id": "regen", "cat": "chip", "pins": true,
+      "title": {"en": "Register with enable", "vi": "Thanh ghi có tín hiệu cho phép"},
+      "desc": {"en": "A 2-to-1 mux in front of the flip-flop keeps the old value while en is 0 and loads d when en is 1: what synthesis builds for if (en) q <= d.", "vi": "Bộ chọn 2 vào 1 đặt trước flip-flop giữ giá trị cũ khi en bằng 0 và nạp d khi en bằng 1. Đây là mạch công cụ tổng hợp dựng cho câu if (en) q <= d."},
+      "keywords": "register enable load mux feedback clock enable flip-flop thanh ghi cho phep nap",
+      "nodes": [
+        {"id": "mux", "shape": "mux", "title": "mux", "x": 60, "y": 0},
+        {"id": "reg", "shape": "dff", "title": "q_reg", "x": 160, "y": 22.4}
+      ],
+      "edges": [
+        {"from": "mux.Y", "to": "reg.D"},
+        {"from": "reg.Q", "to": "mux.I0", "points": [[236, 44], [236, -24], [40, -24], [40, 26.4]]}
+      ],
+      "inputs": [
+        {"pins": ["mux.I1"], "label": {"text": "d", "x": -40, "y": 49.6, "w": 36, "h": 24}},
+        {"pins": ["mux.SEL"], "label": {"text": "en", "x": 64, "y": 116, "w": 36, "h": 24}}
+      ],
+      "outputs": ["reg.Q"],
+      "outLabels": [
+        {"pin": "reg.Q", "text": "q", "x": 260, "y": 32, "w": 36, "h": 24}
+      ],
+      "clocks": [
+        {"pins": ["reg.CLK"], "title": "clk", "at": [40, 150]}
+      ]
+    },
+    {
+      "id": "lfsr", "cat": "chip", "pins": true,
+      "title": {"en": "4-bit LFSR (pseudo-random sequence)", "vi": "LFSR 4 bit (chuỗi giả ngẫu nhiên)"},
+      "desc": {"en": "Four flip-flops with XOR feedback from the last two stages step through all 15 non-zero states before repeating. Start it from any value but 0.", "vi": "Bốn flip-flop với phản hồi XOR từ hai tầng cuối đi qua đủ 15 trạng thái khác 0 rồi mới lặp lại. Cần khởi động từ một giá trị khác 0."},
+      "keywords": "lfsr prbs pseudo random linear feedback shift register xor bist test pattern gia ngau nhien",
+      "nodes": [
+        {"id": "fb", "shape": "xor", "title": "feedback", "x": -110, "y": -8.8},
+        {"id": "l0", "shape": "dff", "title": "q0", "x": 0, "y": 0},
+        {"id": "l1", "shape": "dff", "title": "q1", "x": 130, "y": 0},
+        {"id": "l2", "shape": "dff", "title": "q2", "x": 260, "y": 0},
+        {"id": "l3", "shape": "dff", "title": "q3", "x": 390, "y": 0}
+      ],
+      "edges": [
+        {"from": "fb.Y", "to": "l0.D"},
+        {"from": "l0.Q", "to": "l1.D"},
+        {"from": "l1.Q", "to": "l2.D"},
+        {"from": "l2.Q", "to": "l3.D"},
+        {"from": "l2.Q", "to": "fb.A", "points": [[336, 21.6], [336, -26], [-126, -26], [-126, 4.4]]},
+        {"from": "l3.Q", "to": "fb.B", "points": [[466, 21.6], [466, -40], [-140, -40], [-140, 22]]}
+      ],
+      "outputs": ["l3.Q"],
+      "outLabels": [
+        {"pin": "l3.Q", "text": "prbs", "x": 490, "y": 9.6, "w": 48, "h": 24}
+      ],
+      "clocks": [
+        {"pins": ["l0.CLK", "l1.CLK", "l2.CLK", "l3.CLK"], "title": "clk", "at": [-100, 110]}
+      ]
+    },
+    {
+      "id": "socmin", "cat": "soc", "pins": false, "top": true, "entry": {"node": "axi", "kind": "bus"},
+      "title": {"en": "Minimal RISC-V SoC", "vi": "SoC RISC-V tối thiểu"},
+      "desc": {"en": "The smallest complete chip: a CPU and debug on an AXI bus with boot ROM and SRAM, slow peripherals behind an APB bridge, an interrupt controller, clock and reset.", "vi": "Con chip đầy đủ nhỏ nhất: CPU và khối gỡ lỗi trên bus AXI cùng ROM khởi động và SRAM, ngoại vi chậm sau cầu APB, bộ điều khiển ngắt, clock và reset."},
+      "keywords": "soc risc-v riscv minimal skeleton cpu axi apb rom sram uart gpio timer spi plic interrupt clock reset chip toi thieu",
+      "groups": [
+        {"id": "periph", "label": {"en": "Peripherals on APB", "vi": "Ngoại vi trên APB"}, "color": "teal"}
+      ],
+      "nodes": [
+        {"id": "cpu", "title": {"en": "RISC-V CPU", "vi": "CPU RISC-V"}, "desc": {"en": "Runs the firmware", "vi": "Chạy firmware"}, "icon": "cpu", "color": "blue", "size": "sm", "x": 0, "y": 0},
+        {"id": "dbg", "title": {"en": "Debug (JTAG)", "vi": "Gỡ lỗi (JTAG)"}, "icon": "bug", "color": "blue", "size": "sm", "x": 220, "y": 0},
+        {"id": "clkrst", "title": {"en": "Clock and reset", "vi": "Clock và reset"}, "desc": {"en": "PLL, dividers, reset sync", "vi": "PLL, bộ chia, đồng bộ reset"}, "icon": "clock", "color": "green", "size": "sm", "x": 440, "y": 0},
+        {"id": "axi", "title": {"en": "AXI interconnect", "vi": "Bus AXI"}, "icon": "network", "color": "slate", "width": 396, "x": 0, "y": 110},
+        {"id": "rom", "title": "Boot ROM", "icon": "memory", "color": "amber", "size": "sm", "x": 0, "y": 210},
+        {"id": "sram", "title": "SRAM", "desc": {"en": "On-chip memory", "vi": "Bộ nhớ trên chip"}, "icon": "memory", "color": "amber", "size": "sm", "x": 200, "y": 210},
+        {"id": "apb", "title": {"en": "AXI-to-APB bridge", "vi": "Cầu AXI sang APB"}, "icon": "split", "color": "slate", "size": "sm", "x": 400, "y": 210},
+        {"id": "uart", "title": "UART", "color": "teal", "size": "sm", "x": 0, "y": 340, "group": "periph"},
+        {"id": "gpio", "title": "GPIO", "color": "teal", "size": "sm", "x": 200, "y": 340, "group": "periph"},
+        {"id": "timer", "title": "Timer", "color": "teal", "size": "sm", "x": 400, "y": 340, "group": "periph"},
+        {"id": "spi", "title": "SPI", "color": "teal", "size": "sm", "x": 600, "y": 340, "group": "periph"},
+        {"id": "plic", "title": {"en": "Interrupt controller", "vi": "Bộ điều khiển ngắt"}, "color": "teal", "size": "sm", "x": 640, "y": 110}
+      ],
+      "edges": [
+        {"from": "cpu", "to": "axi", "kind": "bus", "label": "AXI4"},
+        {"from": "dbg", "to": "axi", "kind": "bus"},
+        {"from": "clkrst", "to": "cpu", "kind": "clock", "label": "clk, rst_n"},
+        {"from": "axi", "to": "rom", "kind": "bus"},
+        {"from": "axi", "to": "sram", "kind": "bus"},
+        {"from": "axi", "to": "apb", "kind": "bus"},
+        {"from": "apb", "to": "uart", "label": "APB"},
+        {"from": "apb", "to": "gpio", "label": "APB"},
+        {"from": "apb", "to": "timer", "label": "APB"},
+        {"from": "apb", "to": "spi", "label": "APB"},
+        {"from": "uart", "to": "plic", "kind": "async", "label": "irq"},
+        {"from": "timer", "to": "plic", "kind": "async", "label": "irq"},
+        {"from": "plic", "to": "cpu", "kind": "async", "label": {"en": "interrupt", "vi": "ngắt"}}
+      ]
+    },
+    {
+      "id": "axi2apb", "cat": "soc", "pins": false, "top": true, "entry": {"node": "axi_xbar", "kind": "bus"},
+      "title": {"en": "AXI to APB bridge", "vi": "Cầu AXI sang APB"},
+      "desc": {"en": "Masters reach memory over AXI; slow peripherals hang behind an AXI-to-APB bridge.", "vi": "Các master truy cập bộ nhớ qua AXI; ngoại vi chậm nằm sau cầu nối AXI sang APB."},
+      "keywords": "axi apb amba bridge interconnect bus soc peripheral cau noi",
+      "nodes": [
+        {"id": "cpu", "title": "CPU", "desc": {"en": "AXI master", "vi": "Master AXI"}, "icon": "cpu", "color": "blue", "size": "sm", "x": 0, "y": 0},
+        {"id": "dma", "title": "DMA", "desc": {"en": "AXI master", "vi": "Master AXI"}, "icon": "repeat", "color": "blue", "size": "sm", "x": 240, "y": 0},
+        {"id": "axi_xbar", "title": {"en": "AXI interconnect", "vi": "Bộ kết nối AXI"}, "icon": "network", "color": "slate", "w": 416, "x": 0, "y": 110},
+        {"id": "sram", "title": "SRAM", "icon": "memory", "color": "amber", "size": "sm", "x": 0, "y": 210},
+        {"id": "apb_bridge", "title": {"en": "AXI-to-APB bridge", "vi": "Cầu AXI sang APB"}, "icon": "split", "color": "slate", "size": "sm", "x": 240, "y": 210},
+        {"id": "uart", "title": "UART", "color": "teal", "size": "sm", "x": 60, "y": 320},
+        {"id": "gpio", "title": "GPIO", "color": "teal", "size": "sm", "x": 260, "y": 320},
+        {"id": "timer", "title": "Timer", "color": "teal", "size": "sm", "x": 460, "y": 320}
+      ],
+      "edges": [
+        {"from": "cpu", "to": "axi_xbar", "kind": "bus", "label": "AXI4"},
+        {"from": "dma", "to": "axi_xbar", "kind": "bus", "label": "AXI4"},
+        {"from": "axi_xbar", "to": "sram", "kind": "bus"},
+        {"from": "axi_xbar", "to": "apb_bridge", "kind": "bus"},
+        {"from": "apb_bridge", "to": "uart", "label": "APB"},
+        {"from": "apb_bridge", "to": "gpio", "label": "APB"},
+        {"from": "apb_bridge", "to": "timer", "label": "APB"}
+      ]
+    },
+    {
+      "id": "tlul", "cat": "soc", "pins": false, "entry": {"node": "xbar_main", "kind": "bus"},
+      "title": {"en": "TL-UL crossbar (OpenTitan style)", "vi": "Bus TL-UL (kiểu OpenTitan)"},
+      "desc": {"en": "Hosts and devices share TileLink Uncached Lightweight: channel A carries requests, channel D carries responses. Slow peripherals sit behind a second crossbar.", "vi": "Host và thiết bị dùng chung bus TileLink Uncached Lightweight: kênh A gửi yêu cầu, kênh D trả lời. Ngoại vi chậm nằm sau crossbar thứ hai."},
+      "keywords": "tl-ul tlul tilelink opentitan crossbar xbar ibex watchdog aon timer bus",
+      "nodes": [
+        {"id": "core", "title": {"en": "Ibex core", "vi": "Lõi Ibex"}, "desc": "TL-UL host", "icon": "cpu", "color": "blue", "size": "sm", "x": 0, "y": 0},
+        {"id": "dbg", "title": {"en": "Debug module", "vi": "Khối gỡ lỗi"}, "desc": "TL-UL host", "icon": "bug", "color": "blue", "size": "sm", "x": 240, "y": 0},
+        {"id": "xbar_main", "title": "xbar_main", "desc": {"en": "Main TL-UL crossbar", "vi": "Crossbar TL-UL chính"}, "icon": "network", "color": "slate", "w": 416, "x": 0, "y": 110},
+        {"id": "rom", "title": "ROM", "icon": "lock", "color": "amber", "size": "sm", "x": 0, "y": 230},
+        {"id": "ram", "title": "SRAM", "icon": "memory", "color": "amber", "size": "sm", "x": 200, "y": 230},
+        {"id": "xbar_peri", "title": "xbar_peri", "desc": {"en": "Peripheral crossbar", "vi": "Crossbar ngoại vi"}, "icon": "network", "color": "slate", "size": "sm", "x": 400, "y": 230},
+        {"id": "uart", "title": "UART", "color": "teal", "size": "sm", "x": 200, "y": 350},
+        {"id": "gpio", "title": "GPIO", "color": "teal", "size": "sm", "x": 400, "y": 350},
+        {"id": "aon_timer", "title": {"en": "Watchdog (aon_timer)", "vi": "Watchdog (aon_timer)"}, "color": "teal", "size": "sm", "x": 600, "y": 350}
+      ],
+      "edges": [
+        {"from": "core", "to": "xbar_main", "kind": "bus", "label": "TL-UL A/D"},
+        {"from": "dbg", "to": "xbar_main", "kind": "bus"},
+        {"from": "xbar_main", "to": "rom", "kind": "bus"},
+        {"from": "xbar_main", "to": "ram", "kind": "bus"},
+        {"from": "xbar_main", "to": "xbar_peri", "kind": "bus"},
+        {"from": "xbar_peri", "to": "uart"},
+        {"from": "xbar_peri", "to": "gpio"},
+        {"from": "xbar_peri", "to": "aon_timer"}
+      ]
+    },
+    {
+      "id": "afifo", "cat": "soc", "pins": false, "top": true, "entry": {"node": "mem", "label": "wdata", "kind": "main"},
+      "title": {"en": "Asynchronous FIFO", "vi": "FIFO qua hai miền clock"},
+      "desc": {"en": "Data crosses between two clock domains through a dual-port RAM; the read and write pointers cross in Gray code through synchronizers.", "vi": "Dữ liệu đi qua hai miền clock bằng RAM hai cổng. Con trỏ đọc và con trỏ ghi đi qua bộ đồng bộ ở dạng mã Gray."},
+      "keywords": "async fifo cdc dual clock gray pointer full empty cummings fifo hai mien clock",
+      "groups": [
+        {"id": "wdom", "label": {"en": "Write domain (wclk)", "vi": "Miền ghi (wclk)"}, "color": "blue"},
+        {"id": "rdom", "label": {"en": "Read domain (rclk)", "vi": "Miền đọc (rclk)"}, "color": "teal"}
+      ],
+      "nodes": [
+        {"id": "wclk", "shape": "clock", "title": "wclk", "x": 0, "y": 40, "group": "wdom"},
+        {"id": "wptr", "shape": "counter", "title": {"en": "Write pointer", "vi": "Con trỏ ghi"}, "x": 90, "y": 34, "group": "wdom"},
+        {"id": "full", "title": {"en": "Full flag", "vi": "Cờ đầy"}, "desc": {"en": "Compares wptr with the synced rptr", "vi": "So wptr với rptr đã đồng bộ"}, "x": 50, "y": 170, "w": 176, "size": "sm", "color": "blue", "group": "wdom"},
+        {"id": "sync_r2w", "shape": "sync", "title": "rptr→wclk", "x": 96, "y": 300, "group": "wdom"},
+        {"id": "mem", "shape": "ram", "title": {"en": "Dual-port RAM", "vi": "RAM hai cổng"}, "x": 330, "y": 150},
+        {"id": "rptr", "shape": "counter", "title": {"en": "Read pointer", "vi": "Con trỏ đọc"}, "x": 560, "y": 34, "group": "rdom"},
+        {"id": "rclk", "shape": "clock", "title": "rclk", "x": 700, "y": 40, "group": "rdom"},
+        {"id": "empty", "title": {"en": "Empty flag", "vi": "Cờ rỗng"}, "desc": {"en": "Compares rptr with the synced wptr", "vi": "So rptr với wptr đã đồng bộ"}, "x": 520, "y": 170, "w": 176, "size": "sm", "color": "teal", "group": "rdom"},
+        {"id": "sync_w2r", "shape": "sync", "title": "wptr→rclk", "x": 566, "y": 300, "group": "rdom"}
+      ],
+      "edges": [
+        {"from": "wclk", "to": "wptr", "kind": "clock"},
+        {"from": "rclk", "to": "rptr", "kind": "clock"},
+        {"from": "wptr", "to": "mem", "label": "waddr", "kind": "main"},
+        {"from": "rptr", "to": "mem", "label": "raddr", "kind": "main"},
+        {"from": "wptr", "to": "full"},
+        {"from": "rptr", "to": "empty"},
+        {"from": "wptr", "to": "sync_w2r", "label": {"en": "wptr (Gray)", "vi": "wptr (Gray)"}, "kind": "async"},
+        {"from": "rptr", "to": "sync_r2w", "label": {"en": "rptr (Gray)", "vi": "rptr (Gray)"}, "kind": "async"},
+        {"from": "sync_w2r", "to": "empty"},
+        {"from": "sync_r2w", "to": "full"}
+      ]
+    },
+    {
+      "id": "uart", "direction": "LR", "cat": "soc", "pins": false, "entry": {"node": "bus_if", "kind": "bus", "label": "APB"},
+      "title": {"en": "UART block", "vi": "Khối UART"},
+      "desc": {"en": "Bus interface and registers, TX and RX FIFOs, shift registers and a baud-rate divider. RX is synchronized before sampling.", "vi": "Giao tiếp bus và thanh ghi, FIFO phát và thu, thanh ghi dịch và bộ chia tốc độ baud. Chân RX được đồng bộ trước khi lấy mẫu."},
+      "keywords": "uart serial tx rx baud fifo shift register apb ip giao tiep noi tiep",
+      "nodes": [
+        {"id": "bus_if", "title": {"en": "APB interface", "vi": "Giao tiếp APB"}, "color": "slate", "size": "sm", "x": 0, "y": 110},
+        {"id": "regs", "title": {"en": "Registers", "vi": "Thanh ghi"}, "desc": "CTRL, STATUS, BAUD", "color": "blue", "size": "sm", "x": 220, "y": 110},
+        {"id": "baud", "shape": "counter", "title": {"en": "Baud divider", "vi": "Bộ chia baud"}, "x": 260, "y": 250},
+        {"id": "tx_fifo", "shape": "fifo", "title": "TX FIFO", "x": 470, "y": 20},
+        {"id": "tx_shift", "title": {"en": "TX shift register", "vi": "Thanh ghi dịch TX"}, "color": "teal", "size": "sm", "x": 640, "y": 16},
+        {"id": "tx_pin", "shape": "text", "title": "TX", "x": 860, "y": 26, "w": 40, "h": 24, "style": {"bold": true}},
+        {"id": "rx_pin", "shape": "text", "title": "RX", "x": 860, "y": 206, "w": 40, "h": 24, "style": {"bold": true}},
+        {"id": "rx_sync", "shape": "sync", "title": {"en": "RX sync", "vi": "Đồng bộ RX"}, "x": 720, "y": 194},
+        {"id": "rx_shift", "title": {"en": "RX shift register", "vi": "Thanh ghi dịch RX"}, "color": "teal", "size": "sm", "x": 480, "y": 196},
+        {"id": "rx_fifo", "shape": "fifo", "title": "RX FIFO", "x": 470, "y": 120},
+        {"id": "irq", "shape": "text", "title": "IRQ", "x": 250, "y": 20, "w": 44, "h": 24, "style": {"bold": true}}
+      ],
+      "edges": [
+        {"from": "bus_if", "to": "regs", "kind": "bus"},
+        {"from": "regs", "to": "tx_fifo", "label": {"en": "write", "vi": "ghi"}},
+        {"from": "tx_fifo", "to": "tx_shift", "kind": "main"},
+        {"from": "tx_shift", "to": "tx_pin", "kind": "main"},
+        {"from": "rx_pin", "to": "rx_sync", "kind": "main"},
+        {"from": "rx_sync", "to": "rx_shift", "kind": "main"},
+        {"from": "rx_shift", "to": "rx_fifo", "kind": "main"},
+        {"from": "rx_fifo", "to": "regs", "label": {"en": "read", "vi": "đọc"}},
+        {"from": "baud", "to": "tx_shift", "kind": "clock", "label": {"en": "tick", "vi": "nhịp"}},
+        {"from": "baud", "to": "rx_shift", "kind": "clock"},
+        {"from": "regs", "to": "irq", "kind": "async"}
+      ]
+    },
+    {
+      "id": "spi", "direction": "LR", "cat": "soc", "pins": false, "entry": {"node": "bus_if", "kind": "bus", "label": "APB"},
+      "title": {"en": "SPI master", "vi": "Khối SPI master"},
+      "desc": {"en": "Bus interface and registers, transmit and receive FIFOs, one shift register that sends on MOSI while it reads MISO, and a divider that makes SCLK.", "vi": "Giao tiếp bus và thanh ghi, FIFO phát và thu, một thanh ghi dịch vừa đẩy ra MOSI vừa đọc MISO, và bộ chia tạo SCLK."},
+      "keywords": "spi master serial peripheral interface sclk mosi miso cs flash sensor ip khoi spi",
+      "nodes": [
+        {"id": "bus_if", "title": {"en": "APB interface", "vi": "Giao tiếp APB"}, "color": "slate", "size": "sm", "x": 0, "y": 110},
+        {"id": "regs", "title": {"en": "Registers", "vi": "Thanh ghi"}, "desc": "CTRL, STATUS, DIV, CS", "color": "blue", "size": "sm", "x": 220, "y": 110},
+        {"id": "tx_fifo", "shape": "fifo", "title": "TX FIFO", "x": 470, "y": 20},
+        {"id": "rx_fifo", "shape": "fifo", "title": "RX FIFO", "x": 470, "y": 200},
+        {"id": "shift", "title": {"en": "Shift register", "vi": "Thanh ghi dịch"}, "desc": {"en": "MSB first, mode 0 to 3", "vi": "MSB trước, chế độ 0 đến 3"}, "color": "teal", "size": "sm", "x": 660, "y": 110},
+        {"id": "sclk_gen", "shape": "counter", "title": {"en": "SCLK divider", "vi": "Bộ chia SCLK"}, "x": 270, "y": 270},
+        {"id": "sclk", "shape": "text", "title": "SCLK", "x": 900, "y": 280, "w": 52, "h": 24, "style": {"bold": true}},
+        {"id": "mosi", "shape": "text", "title": "MOSI", "x": 900, "y": 110, "w": 52, "h": 24, "style": {"bold": true}},
+        {"id": "miso", "shape": "text", "title": "MISO", "x": 900, "y": 160, "w": 52, "h": 24, "style": {"bold": true}},
+        {"id": "cs_n", "shape": "text", "title": "CS_N", "x": 900, "y": 20, "w": 52, "h": 24, "style": {"bold": true}}
+      ],
+      "edges": [
+        {"from": "bus_if", "to": "regs", "kind": "bus"},
+        {"from": "regs", "to": "tx_fifo", "label": {"en": "write", "vi": "ghi"}},
+        {"from": "rx_fifo", "to": "regs", "label": {"en": "read", "vi": "đọc"}},
+        {"from": "tx_fifo", "to": "shift", "kind": "main"},
+        {"from": "shift", "to": "rx_fifo", "kind": "main"},
+        {"from": "shift", "to": "mosi", "kind": "main"},
+        {"from": "miso", "to": "shift", "kind": "main"},
+        {"from": "regs", "to": "sclk_gen", "label": "DIV"},
+        {"from": "sclk_gen", "to": "shift", "kind": "clock"},
+        {"from": "sclk_gen", "to": "sclk", "kind": "clock"},
+        {"from": "regs", "to": "cs_n", "label": {"en": "chip select", "vi": "chọn thiết bị"}}
+      ]
+    },
+    {
+      "id": "clktree", "cat": "soc", "pins": false, "entry": {"node": "pll", "kind": "clock"},
+      "title": {"en": "Clock and reset tree", "vi": "Cây clock và reset"},
+      "desc": {"en": "A crystal drives the PLL, dividers and clock gates feed each domain, and a power-on reset is synchronized before it reaches the domains.", "vi": "Thạch anh cấp cho PLL, bộ chia và cổng clock cấp cho từng miền, còn reset khi cấp nguồn được đồng bộ trước khi tới các miền."},
+      "keywords": "clock tree reset tree pll crystal oscillator divider clock gate por reset synchronizer domains cay clock",
+      "nodes": [
+        {"id": "osc", "shape": "oscillator", "title": {"en": "Crystal 24 MHz", "vi": "Thạch anh 24 MHz"}, "x": 0, "y": 38},
+        {"id": "pll", "shape": "pll", "title": "PLL", "x": 110, "y": 30},
+        {"id": "div", "title": {"en": "Dividers", "vi": "Bộ chia"}, "desc": "/1, /2, /4", "color": "slate", "size": "sm", "x": 270, "y": 30},
+        {"id": "cg_cpu", "title": {"en": "CPU clock gate", "vi": "Cổng clock CPU"}, "color": "slate", "size": "sm", "x": 490, "y": 0},
+        {"id": "cg_per", "title": {"en": "Peripheral clock gate", "vi": "Cổng clock ngoại vi"}, "color": "slate", "size": "sm", "x": 490, "y": 90},
+        {"id": "dom_cpu", "title": {"en": "CPU domain", "vi": "Miền CPU"}, "desc": "1 GHz", "color": "blue", "size": "sm", "x": 710, "y": 0},
+        {"id": "dom_per", "title": {"en": "Peripheral domain", "vi": "Miền ngoại vi"}, "desc": "100 MHz", "color": "teal", "size": "sm", "x": 710, "y": 90},
+        {"id": "por", "title": {"en": "Power-on reset", "vi": "Reset khi cấp nguồn"}, "color": "red", "size": "sm", "x": 60, "y": 200},
+        {"id": "rst_sync", "title": {"en": "Reset synchronizers", "vi": "Bộ đồng bộ reset"}, "desc": {"en": "one per domain", "vi": "mỗi miền một bộ"}, "color": "red", "size": "sm", "x": 490, "y": 200}
+      ],
+      "edges": [
+        {"from": "osc", "to": "pll", "kind": "clock"},
+        {"from": "pll", "to": "div", "kind": "clock"},
+        {"from": "div", "to": "cg_cpu", "kind": "clock"},
+        {"from": "div", "to": "cg_per", "kind": "clock"},
+        {"from": "cg_cpu", "to": "dom_cpu", "kind": "clock"},
+        {"from": "cg_per", "to": "dom_per", "kind": "clock"},
+        {"from": "por", "to": "rst_sync", "kind": "reset", "label": "arst_n"},
+        {"from": "rst_sync", "to": "dom_cpu", "kind": "reset"},
+        {"from": "rst_sync", "to": "dom_per", "kind": "reset"}
+      ]
+    },
+    {
+      "id": "tb", "cat": "soc", "pins": false, "entry": {"node": "seq", "label": {"en": "starts", "vi": "khởi chạy"}},
+      "title": {"en": "UVM testbench", "vi": "Môi trường kiểm thử UVM"},
+      "desc": {"en": "A test starts sequences; the driver turns them into pin activity on the design, the monitor watches the pins, and the scoreboard compares with a reference model while coverage counts what was exercised.", "vi": "Test khởi chạy các sequence; driver biến chúng thành tín hiệu trên thiết kế, monitor theo dõi các chân, scoreboard so với mô hình tham chiếu, còn coverage đếm những gì đã được kiểm."},
+      "keywords": "uvm testbench verification sequencer driver monitor scoreboard coverage agent env dut sv kiem thu",
+      "groups": [
+        {"id": "env", "label": {"en": "Environment (env)", "vi": "Môi trường (env)"}, "color": "slate"},
+        {"id": "agent", "label": "Agent", "color": "blue", "parent": "env"}
+      ],
+      "nodes": [
+        {"id": "test", "title": "Test", "desc": {"en": "Picks the sequences and settings", "vi": "Chọn sequence và cấu hình"}, "color": "violet", "size": "sm", "x": 0, "y": 0},
+        {"id": "seq", "title": "Sequencer", "color": "blue", "size": "sm", "x": 0, "y": 130, "group": "agent"},
+        {"id": "drv", "title": "Driver", "color": "blue", "size": "sm", "x": 0, "y": 240, "group": "agent"},
+        {"id": "mon", "title": "Monitor", "color": "blue", "size": "sm", "x": 220, "y": 240, "group": "agent"},
+        {"id": "ref", "title": {"en": "Reference model", "vi": "Mô hình tham chiếu"}, "color": "amber", "size": "sm", "x": 460, "y": 130, "group": "env"},
+        {"id": "sb", "title": "Scoreboard", "desc": {"en": "Compares actual with expected", "vi": "So kết quả thật với kết quả mong đợi"}, "color": "amber", "size": "sm", "x": 460, "y": 240, "group": "env"},
+        {"id": "cov", "title": "Coverage", "color": "amber", "size": "sm", "x": 460, "y": 350, "group": "env"},
+        {"id": "dut", "title": {"en": "Design under test (DUT)", "vi": "Thiết kế cần kiểm (DUT)"}, "color": "violet", "x": 100, "y": 400}
+      ],
+      "edges": [
+        {"from": "test", "to": "seq", "label": {"en": "starts", "vi": "khởi chạy"}},
+        {"from": "seq", "to": "drv", "label": "transaction"},
+        {"from": "drv", "to": "dut", "kind": "main", "label": {"en": "drives pins", "vi": "đưa tín hiệu"}},
+        {"from": "dut", "to": "mon", "kind": "main", "label": {"en": "samples", "vi": "lấy mẫu"}},
+        {"from": "mon", "to": "ref"},
+        {"from": "mon", "to": "sb", "label": {"en": "actual", "vi": "thực tế"}},
+        {"from": "ref", "to": "sb", "label": {"en": "expected", "vi": "mong đợi"}},
+        {"from": "mon", "to": "cov"}
+      ]
+    },
+    {
+      "id": "web3tier", "direction": "LR", "cat": "software", "pins": false, "top": true, "entry": {"node": "lb", "kind": "main"},
+      "title": {"en": "Three-tier web app", "vi": "Ứng dụng web ba lớp"},
+      "desc": {"en": "Users reach app servers through a load balancer; the servers read a cache before the database.", "vi": "Người dùng vào máy chủ ứng dụng qua bộ cân bằng tải; máy chủ đọc cache trước khi đọc cơ sở dữ liệu."},
+      "keywords": "web three tier 3-tier load balancer app server database cache redis ung dung web",
+      "nodes": [
+        {"id": "users", "shape": "user", "title": {"en": "Users", "vi": "Người dùng"}, "x": 0, "y": 60},
+        {"id": "web", "shape": "browser", "title": {"en": "Web app", "vi": "Ứng dụng web"}, "x": 90, "y": 42},
+        {"id": "lb", "title": {"en": "Load balancer", "vi": "Cân bằng tải"}, "icon": "network", "color": "slate", "size": "sm", "x": 260, "y": 60},
+        {"id": "app1", "shape": "server", "title": {"en": "App server 1", "vi": "Máy chủ ứng dụng 1"}, "x": 500, "y": 0},
+        {"id": "app2", "shape": "server", "title": {"en": "App server 2", "vi": "Máy chủ ứng dụng 2"}, "x": 500, "y": 120},
+        {"id": "cache", "title": "Cache (Redis)", "icon": "zap", "color": "amber", "size": "sm", "x": 680, "y": 0},
+        {"id": "db", "shape": "database", "title": {"en": "Database", "vi": "Cơ sở dữ liệu"}, "x": 700, "y": 110}
+      ],
+      "edges": [
+        {"from": "users", "to": "web", "kind": "main"},
+        {"from": "web", "to": "lb", "kind": "main", "label": "HTTPS"},
+        {"from": "lb", "to": "app1"},
+        {"from": "lb", "to": "app2"},
+        {"from": "app1", "to": "cache", "kind": "storage"},
+        {"from": "app1", "to": "db", "kind": "storage"},
+        {"from": "app2", "to": "db", "kind": "storage"}
+      ]
+    },
+    {
+      "id": "micro", "direction": "LR", "cat": "software", "pins": false, "top": true, "entry": {"node": "gw", "kind": "main"},
+      "title": {"en": "Microservices behind an API gateway", "vi": "Microservice sau API gateway"},
+      "desc": {"en": "Web and mobile clients call one gateway; each service owns its database, and services talk through a message bus instead of calling each other.", "vi": "Ứng dụng web và di động gọi qua một cổng API; mỗi dịch vụ có cơ sở dữ liệu riêng, và các dịch vụ trao đổi qua message bus thay vì gọi thẳng nhau."},
+      "keywords": "microservices api gateway auth orders payments message bus database per service kafka micro dich vu",
+      "nodes": [
+        {"id": "web", "shape": "browser", "title": {"en": "Web app", "vi": "Ứng dụng web"}, "x": 0, "y": 20},
+        {"id": "mobile", "shape": "mobile", "title": {"en": "Mobile app", "vi": "Ứng dụng di động"}, "x": 40, "y": 170},
+        {"id": "gw", "shape": "api", "title": "API gateway", "x": 200, "y": 100},
+        {"id": "auth", "shape": "gear", "title": {"en": "Auth service", "vi": "Dịch vụ xác thực"}, "x": 440, "y": 0},
+        {"id": "orders", "shape": "gear", "title": {"en": "Order service", "vi": "Dịch vụ đơn hàng"}, "x": 440, "y": 110},
+        {"id": "pay", "shape": "gear", "title": {"en": "Payment service", "vi": "Dịch vụ thanh toán"}, "x": 440, "y": 250},
+        {"id": "authdb", "shape": "database", "title": {"en": "Users", "vi": "Người dùng"}, "x": 640, "y": -18},
+        {"id": "orderdb", "shape": "database", "title": {"en": "Orders", "vi": "Đơn hàng"}, "x": 640, "y": 92},
+        {"id": "bus", "shape": "queue", "title": "Message bus", "x": 620, "y": 190},
+        {"id": "paydb", "shape": "database", "title": {"en": "Payments", "vi": "Thanh toán"}, "x": 640, "y": 262},
+        {"id": "psp", "shape": "cloud", "title": {"en": "Payment provider", "vi": "Cổng thanh toán"}, "external": true, "x": 820, "y": 250}
+      ],
+      "edges": [
+        {"from": "web", "to": "gw", "kind": "main", "label": "HTTPS"},
+        {"from": "mobile", "to": "gw", "kind": "main", "label": "HTTPS"},
+        {"from": "gw", "to": "auth"},
+        {"from": "gw", "to": "orders"},
+        {"from": "gw", "to": "pay"},
+        {"from": "auth", "to": "authdb", "kind": "storage"},
+        {"from": "orders", "to": "orderdb", "kind": "storage"},
+        {"from": "orders", "to": "bus", "kind": "async", "label": {"en": "order placed", "vi": "có đơn mới"}},
+        {"from": "bus", "to": "pay", "kind": "async"},
+        {"from": "pay", "to": "paydb", "kind": "storage"},
+        {"from": "pay", "to": "psp", "kind": "main"}
+      ]
+    },
+    {
+      "id": "events", "direction": "LR", "cat": "software", "pins": false, "top": true, "entry": {"node": "queue", "kind": "async", "label": {"en": "events", "vi": "sự kiện"}},
+      "title": {"en": "Event-driven services", "vi": "Hệ thống hướng sự kiện"},
+      "desc": {"en": "A service publishes events to a queue; consumers handle them on their own time, and failed messages go to a dead-letter queue.", "vi": "Một dịch vụ đẩy sự kiện vào hàng đợi; các dịch vụ nhận xử lý theo nhịp riêng, tin lỗi chuyển sang hàng đợi lỗi."},
+      "keywords": "event driven queue kafka pubsub consumer producer dead letter dlq async su kien hang doi",
+      "nodes": [
+        {"id": "producer", "shape": "gear", "title": {"en": "Order service", "vi": "Dịch vụ đặt hàng"}, "x": 0, "y": 70},
+        {"id": "queue", "shape": "queue", "title": {"en": "Event queue", "vi": "Hàng đợi sự kiện"}, "x": 150, "y": 70},
+        {"id": "payment", "shape": "gear", "title": {"en": "Payment service", "vi": "Dịch vụ thanh toán"}, "x": 380, "y": 0},
+        {"id": "mailer", "shape": "gear", "title": {"en": "Email service", "vi": "Dịch vụ gửi thư"}, "x": 380, "y": 130},
+        {"id": "db", "shape": "database", "title": {"en": "Database", "vi": "Cơ sở dữ liệu"}, "x": 540, "y": 0},
+        {"id": "dlq", "shape": "queue", "title": {"en": "Dead-letter queue", "vi": "Hàng đợi lỗi"}, "x": 150, "y": 220}
+      ],
+      "edges": [
+        {"from": "producer", "to": "queue", "kind": "async", "label": {"en": "order placed", "vi": "có đơn mới"}},
+        {"from": "queue", "to": "payment", "kind": "async"},
+        {"from": "queue", "to": "mailer", "kind": "async"},
+        {"from": "payment", "to": "db", "kind": "storage"},
+        {"from": "queue", "to": "dlq", "kind": "fail", "label": {"en": "retries used up", "vi": "hết lượt thử lại"}}
+      ]
+    },
+    {
+      "id": "serverless", "direction": "LR", "cat": "software", "pins": false, "entry": {"node": "apigw", "kind": "main"},
+      "title": {"en": "Serverless web app", "vi": "Ứng dụng web không máy chủ"},
+      "desc": {"en": "A CDN serves the static site; API calls go through an API gateway to functions that use a table, file storage and a queue for background work.", "vi": "CDN phục vụ trang tĩnh; lời gọi API đi qua API gateway tới các hàm xử lý, các hàm dùng bảng dữ liệu, kho file và hàng đợi cho việc chạy nền."},
+      "keywords": "serverless lambda functions api gateway cdn s3 dynamodb sqs cloud faas khong may chu",
+      "nodes": [
+        {"id": "users", "shape": "user", "title": {"en": "Users", "vi": "Người dùng"}, "x": 0, "y": 80},
+        {"id": "cdn", "shape": "cloud", "title": "CDN", "x": 130, "y": -10},
+        {"id": "site", "title": {"en": "Static site", "vi": "Trang tĩnh"}, "desc": {"en": "object storage", "vi": "kho đối tượng"}, "icon": "folder", "color": "amber", "size": "sm", "x": 330, "y": 0},
+        {"id": "apigw", "shape": "api", "title": "API gateway", "x": 150, "y": 140},
+        {"id": "fn", "shape": "gear", "title": {"en": "Functions", "vi": "Hàm xử lý"}, "x": 360, "y": 142},
+        {"id": "table", "shape": "database", "title": {"en": "Table", "vi": "Bảng dữ liệu"}, "x": 540, "y": 70},
+        {"id": "files", "title": {"en": "File storage", "vi": "Kho file"}, "icon": "folder", "color": "amber", "size": "sm", "x": 540, "y": 180},
+        {"id": "jobs", "shape": "queue", "title": {"en": "Job queue", "vi": "Hàng đợi việc"}, "x": 540, "y": 270},
+        {"id": "worker", "shape": "gear", "title": {"en": "Background function", "vi": "Hàm chạy nền"}, "x": 760, "y": 268}
+      ],
+      "edges": [
+        {"from": "users", "to": "cdn", "kind": "main"},
+        {"from": "cdn", "to": "site"},
+        {"from": "users", "to": "apigw", "kind": "main", "label": "HTTPS"},
+        {"from": "apigw", "to": "fn"},
+        {"from": "fn", "to": "table", "kind": "storage"},
+        {"from": "fn", "to": "files", "kind": "storage"},
+        {"from": "fn", "to": "jobs", "kind": "async"},
+        {"from": "jobs", "to": "worker", "kind": "async"}
+      ]
+    },
+    {
+      "id": "datapipe", "direction": "LR", "cat": "software", "pins": false, "entry": {"node": "ingest", "kind": "async"},
+      "title": {"en": "Data pipeline (streaming and ETL)", "vi": "Đường dữ liệu (luồng và ETL)"},
+      "desc": {"en": "Apps, logs and database changes flow into an event queue; stream processing lands them in a data lake, and a scheduled ETL loads the warehouse behind the BI reports.", "vi": "Dữ liệu từ ứng dụng, log và thay đổi của cơ sở dữ liệu đổ vào hàng đợi sự kiện; khâu xử lý luồng ghi vào hồ dữ liệu, còn ETL theo lịch nạp kho dữ liệu cho báo cáo BI."},
+      "keywords": "data pipeline etl elt streaming kafka cdc data lake warehouse bi analytics spark flink airflow duong du lieu",
+      "nodes": [
+        {"id": "apps", "shape": "server", "title": {"en": "Apps", "vi": "Ứng dụng"}, "x": 20, "y": 0},
+        {"id": "logs", "shape": "document", "title": "Log", "x": 0, "y": 110},
+        {"id": "oltp", "shape": "database", "title": {"en": "App database", "vi": "CSDL nghiệp vụ"}, "x": 0, "y": 220},
+        {"id": "cdc", "shape": "gear", "title": {"en": "Change capture", "vi": "Bắt thay đổi (CDC)"}, "x": 180, "y": 238},
+        {"id": "ingest", "shape": "queue", "title": {"en": "Event queue", "vi": "Hàng đợi sự kiện"}, "x": 200, "y": 110},
+        {"id": "stream", "shape": "gear", "title": {"en": "Stream processing", "vi": "Xử lý luồng"}, "x": 400, "y": 110},
+        {"id": "lake", "title": {"en": "Data lake", "vi": "Hồ dữ liệu"}, "icon": "folder", "color": "amber", "size": "sm", "x": 540, "y": 100},
+        {"id": "etl", "shape": "gear", "title": {"en": "Scheduled ETL", "vi": "ETL theo lịch"}, "x": 780, "y": 110},
+        {"id": "dwh", "shape": "database", "title": {"en": "Warehouse", "vi": "Kho dữ liệu"}, "x": 900, "y": 92},
+        {"id": "bi", "title": {"en": "BI reports", "vi": "Báo cáo BI"}, "icon": "chart-bar", "color": "violet", "size": "sm", "x": 1040, "y": 100}
+      ],
+      "edges": [
+        {"from": "apps", "to": "ingest", "kind": "async"},
+        {"from": "logs", "to": "ingest", "kind": "async"},
+        {"from": "oltp", "to": "cdc"},
+        {"from": "cdc", "to": "ingest", "kind": "async"},
+        {"from": "ingest", "to": "stream", "kind": "async"},
+        {"from": "stream", "to": "lake", "kind": "storage"},
+        {"from": "lake", "to": "etl"},
+        {"from": "etl", "to": "dwh", "kind": "storage"},
+        {"from": "dwh", "to": "bi"}
+      ]
+    },
+    {
+      "id": "mlpipe", "direction": "LR", "cat": "software", "pins": false, "entry": {"node": "prep", "kind": "main"},
+      "title": {"en": "Machine-learning pipeline", "vi": "Pipeline học máy"},
+      "desc": {"en": "Data is cleaned into a feature store, a model is trained and kept in a registry, the serving API answers the app, and drift monitoring asks for retraining.", "vi": "Dữ liệu được làm sạch vào kho đặc trưng, mô hình được huấn luyện và lưu ở kho mô hình, API phục vụ trả lời ứng dụng, còn khâu giám sát độ trôi yêu cầu huấn luyện lại."},
+      "keywords": "machine learning ml mlops pipeline training feature store model registry serving monitoring drift hoc may",
+      "nodes": [
+        {"id": "raw", "shape": "database", "title": {"en": "Raw data", "vi": "Dữ liệu thô"}, "x": 0, "y": 40},
+        {"id": "prep", "shape": "gear", "title": {"en": "Clean and label", "vi": "Làm sạch và gán nhãn"}, "x": 180, "y": 58},
+        {"id": "fs", "shape": "database", "title": {"en": "Feature store", "vi": "Kho đặc trưng"}, "x": 330, "y": 40},
+        {"id": "train", "shape": "gear", "title": {"en": "Training (GPU)", "vi": "Huấn luyện (GPU)"}, "x": 510, "y": 58},
+        {"id": "registry", "title": {"en": "Model registry", "vi": "Kho mô hình"}, "icon": "package", "color": "violet", "size": "sm", "x": 640, "y": 50},
+        {"id": "serve", "shape": "api", "title": {"en": "Prediction API", "vi": "API dự đoán"}, "x": 880, "y": 58},
+        {"id": "app", "shape": "browser", "title": {"en": "App", "vi": "Ứng dụng"}, "x": 1060, "y": 40},
+        {"id": "monitor", "title": {"en": "Drift monitoring", "vi": "Giám sát độ trôi"}, "icon": "activity", "color": "amber", "size": "sm", "x": 640, "y": 200}
+      ],
+      "edges": [
+        {"from": "raw", "to": "prep"},
+        {"from": "prep", "to": "fs", "kind": "storage"},
+        {"from": "fs", "to": "train"},
+        {"from": "train", "to": "registry"},
+        {"from": "registry", "to": "serve", "label": {"en": "deploy", "vi": "triển khai"}},
+        {"from": "serve", "to": "app", "kind": "main"},
+        {"from": "serve", "to": "monitor", "kind": "async", "label": {"en": "predictions", "vi": "kết quả dự đoán"}},
+        {"from": "monitor", "to": "train", "kind": "fail", "label": {"en": "retrain", "vi": "huấn luyện lại"}}
+      ]
+    },
+    {
+      "id": "k8s", "direction": "LR", "cat": "software", "pins": false, "entry": {"node": "lb", "kind": "main"},
+      "title": {"en": "Kubernetes deployment", "vi": "Triển khai trên Kubernetes"},
+      "desc": {"en": "Traffic comes through a load balancer and the ingress to a service that spreads it over identical pods; the database stays outside the cluster.", "vi": "Lưu lượng đi qua bộ cân bằng tải và ingress tới service, service chia đều cho các pod giống nhau; cơ sở dữ liệu nằm ngoài cụm."},
+      "keywords": "kubernetes k8s cluster ingress service pod deployment replicas container load balancer trien khai",
+      "groups": [
+        {"id": "cluster", "label": {"en": "Kubernetes cluster", "vi": "Cụm Kubernetes"}, "color": "blue"}
+      ],
+      "nodes": [
+        {"id": "users", "shape": "user", "title": {"en": "Users", "vi": "Người dùng"}, "x": 0, "y": 100},
+        {"id": "lb", "shape": "cloud", "title": {"en": "Load balancer", "vi": "Cân bằng tải"}, "x": 110, "y": 80},
+        {"id": "ingress", "title": "Ingress", "icon": "network", "color": "slate", "size": "sm", "x": 320, "y": 90, "group": "cluster"},
+        {"id": "svc", "title": "Service", "icon": "workflow", "color": "slate", "size": "sm", "x": 540, "y": 90, "group": "cluster"},
+        {"id": "pod1", "shape": "server", "title": "Pod 1", "x": 780, "y": 0, "group": "cluster"},
+        {"id": "pod2", "shape": "server", "title": "Pod 2", "x": 780, "y": 100, "group": "cluster"},
+        {"id": "pod3", "shape": "server", "title": "Pod 3", "x": 780, "y": 200, "group": "cluster"},
+        {"id": "db", "shape": "database", "title": {"en": "Managed database", "vi": "CSDL dịch vụ"}, "x": 940, "y": 92}
+      ],
+      "edges": [
+        {"from": "users", "to": "lb", "kind": "main", "label": "HTTPS"},
+        {"from": "lb", "to": "ingress", "kind": "main"},
+        {"from": "ingress", "to": "svc"},
+        {"from": "svc", "to": "pod1"},
+        {"from": "svc", "to": "pod2"},
+        {"from": "svc", "to": "pod3"},
+        {"from": "pod1", "to": "db", "kind": "storage"},
+        {"from": "pod2", "to": "db", "kind": "storage"},
+        {"from": "pod3", "to": "db", "kind": "storage"}
+      ]
+    },
+    {
+      "id": "cicd", "direction": "LR", "cat": "software", "pins": false, "entry": {"node": "push", "kind": "main"},
+      "title": {"en": "CI/CD pipeline", "vi": "Pipeline CI/CD"},
+      "desc": {"en": "Every push is built, tested and scanned, deployed to staging, and goes to production after an approval.", "vi": "Mỗi lần đẩy code sẽ qua các bước build, chạy test, quét bảo mật và triển khai lên môi trường staging; bản chỉ lên production sau khi được duyệt."},
+      "keywords": "ci cd pipeline build test deploy staging production approval devops trien khai",
+      "nodes": [
+        {"id": "push", "shape": "terminator", "title": {"en": "Push code", "vi": "Đẩy code"}, "x": 0, "y": 16},
+        {"id": "build", "shape": "box", "title": "Build", "x": 170, "y": 10},
+        {"id": "test", "shape": "box", "title": {"en": "Run tests", "vi": "Chạy test"}, "x": 350, "y": 10},
+        {"id": "scan", "shape": "box", "title": {"en": "Security scan", "vi": "Quét bảo mật"}, "x": 530, "y": 10},
+        {"id": "staging", "shape": "box", "title": {"en": "Deploy to staging", "vi": "Triển khai staging"}, "x": 710, "y": 10},
+        {"id": "approve", "shape": "decision", "title": {"en": "Approved?", "vi": "Được duyệt?"}, "x": 700, "y": 130},
+        {"id": "prod", "shape": "box", "title": {"en": "Deploy to production", "vi": "Triển khai production"}, "x": 710, "y": 270},
+        {"id": "notify", "shape": "message", "title": {"en": "Notify the team", "vi": "Báo cho nhóm"}, "x": 384, "y": 150}
+      ],
+      "edges": [
+        {"from": "push", "to": "build", "kind": "main"},
+        {"from": "build", "to": "test", "kind": "main"},
+        {"from": "test", "to": "scan", "kind": "main"},
+        {"from": "scan", "to": "staging", "kind": "main"},
+        {"from": "staging", "to": "approve"},
+        {"from": "approve", "to": "prod", "kind": "ok", "label": {"en": "Yes", "vi": "Có"}},
+        {"from": "approve", "to": "notify", "kind": "fail", "label": {"en": "No", "vi": "Không"}},
+        {"from": "test", "to": "notify", "kind": "fail", "label": {"en": "failed", "vi": "lỗi"}}
+      ]
+    },
+    {
+      "id": "approval", "direction": "TB", "cat": "process", "pins": false, "top": true, "entry": {"node": "submit", "kind": "main"},
+      "title": {"en": "Approval process", "vi": "Quy trình duyệt"},
+      "desc": {"en": "A request is submitted and reviewed; an approved one is carried out and reported, a rejected one is fixed and sent again.", "vi": "Đề nghị được gửi và xem xét; nếu được duyệt thì thực hiện và báo kết quả, nếu không thì sửa và gửi lại."},
+      "keywords": "approval process workflow request review approve reject flowchart quy trinh duyet de nghi luu do",
+      "nodes": [
+        {"id": "start", "shape": "terminator", "title": {"en": "Start", "vi": "Bắt đầu"}, "x": 5, "y": 0},
+        {"id": "submit", "shape": "box", "title": {"en": "Submit the request", "vi": "Gửi đề nghị"}, "x": 0, "y": 90},
+        {"id": "review", "shape": "decision", "title": {"en": "Approved?", "vi": "Được duyệt?"}, "x": 0, "y": 200},
+        {"id": "do", "shape": "box", "title": {"en": "Carry it out", "vi": "Thực hiện"}, "x": 0, "y": 330},
+        {"id": "notify", "shape": "message", "title": {"en": "Report the result", "vi": "Báo kết quả"}, "x": 44, "y": 440},
+        {"id": "end", "shape": "terminator", "title": {"en": "End", "vi": "Kết thúc"}, "x": 5, "y": 540},
+        {"id": "fix", "shape": "box", "title": {"en": "Fix and send again", "vi": "Sửa và gửi lại"}, "x": 240, "y": 205}
+      ],
+      "edges": [
+        {"from": "start", "to": "submit"},
+        {"from": "submit", "to": "review"},
+        {"from": "review", "to": "do", "kind": "ok", "label": {"en": "Yes", "vi": "Có"}},
+        {"from": "review", "to": "fix", "kind": "fail", "label": {"en": "No", "vi": "Không"}},
+        {"from": "fix", "to": "submit"},
+        {"from": "do", "to": "notify"},
+        {"from": "notify", "to": "end"}
+      ]
+    },
+    {
+      "id": "login", "direction": "TB", "cat": "process", "pins": false, "entry": {"node": "input", "kind": "main"},
+      "title": {"en": "Sign-in with limited retries", "vi": "Đăng nhập có giới hạn thử lại"},
+      "desc": {"en": "A wrong password sends the user back to try again, up to three times; after that the account is locked for a while.", "vi": "Nhập sai mật khẩu thì quay lại nhập tiếp, tối đa ba lần; sai quá số lần thì tài khoản bị khóa một thời gian."},
+      "keywords": "login sign in authentication password retry lock account flowchart dang nhap thu lai khoa",
+      "nodes": [
+        {"id": "start", "shape": "terminator", "title": {"en": "Open the sign-in page", "vi": "Mở trang đăng nhập"}, "x": 5, "y": 0},
+        {"id": "input", "shape": "parallelogram", "title": {"en": "Enter user and password", "vi": "Nhập tài khoản, mật khẩu"}, "x": 5, "y": 90},
+        {"id": "ok", "shape": "decision", "title": {"en": "Correct?", "vi": "Đúng?"}, "x": 0, "y": 190},
+        {"id": "home", "shape": "box", "title": {"en": "Open the home page", "vi": "Vào trang chính"}, "x": 0, "y": 320},
+        {"id": "tries", "shape": "decision", "title": {"en": "Under 3 tries?", "vi": "Dưới 3 lần?"}, "x": 250, "y": 190},
+        {"id": "lock", "shape": "box", "title": {"en": "Lock for 15 minutes", "vi": "Khóa 15 phút"}, "x": 250, "y": 320},
+        {"id": "end", "shape": "terminator", "title": {"en": "End", "vi": "Kết thúc"}, "x": 130, "y": 430}
+      ],
+      "edges": [
+        {"from": "start", "to": "input"},
+        {"from": "input", "to": "ok"},
+        {"from": "ok", "to": "home", "kind": "ok", "label": {"en": "Yes", "vi": "Có"}},
+        {"from": "ok", "to": "tries", "kind": "fail", "label": {"en": "No", "vi": "Không"}},
+        {"from": "tries", "to": "input", "label": {"en": "Yes", "vi": "Có"}},
+        {"from": "tries", "to": "lock", "kind": "fail", "label": {"en": "No", "vi": "Không"}},
+        {"from": "home", "to": "end"},
+        {"from": "lock", "to": "end"}
+      ]
+    },
+    {
+      "id": "fsmctl", "direction": "LR", "cat": "process", "pins": false, "top": true, "entry": {"node": "idle"},
+      "title": {"en": "Control state machine", "vi": "Máy trạng thái điều khiển"},
+      "desc": {"en": "The usual controller: wait in IDLE, work in BUSY, report in DONE, and go through ERROR when something fails; every path returns to IDLE.", "vi": "Bộ điều khiển thường gặp: chờ ở IDLE, làm việc ở BUSY, báo xong ở DONE, gặp sự cố thì sang ERROR; mọi nhánh đều quay về IDLE."},
+      "keywords": "state machine fsm controller idle busy done error states may trang thai dieu khien",
+      "nodes": [
+        {"id": "idle", "shape": "state", "title": "IDLE", "initial": true, "x": 0, "y": 60},
+        {"id": "busy", "shape": "state", "title": "BUSY", "x": 220, "y": 60},
+        {"id": "done", "shape": "state", "title": "DONE", "x": 440, "y": 60},
+        {"id": "err", "shape": "state", "title": "ERROR", "x": 220, "y": 190}
+      ],
+      "edges": [
+        {"from": "idle", "to": "busy", "label": "start"},
+        {"from": "busy", "to": "done", "label": {"en": "finished", "vi": "xong"}},
+        {"from": "done", "to": "idle", "label": {"en": "result read", "vi": "đã đọc kết quả"}},
+        {"from": "busy", "to": "err", "kind": "fail", "label": {"en": "fault", "vi": "lỗi"}},
+        {"from": "err", "to": "idle", "label": {"en": "cleared", "vi": "xóa lỗi"}}
+      ]
+    },
+    {
+      "id": "uartrx", "direction": "LR", "cat": "process", "pins": false, "entry": {"node": "idle"},
+      "title": {"en": "UART receiver state machine", "vi": "Máy trạng thái nhận UART"},
+      "desc": {"en": "The receiver waits for the start bit, samples 8 data bits in the middle of each bit, then checks the stop bit; a stop bit of 0 is a framing error.", "vi": "Bộ thu chờ bit start, lấy mẫu 8 bit dữ liệu ở giữa mỗi bit, rồi kiểm tra bit stop; bit stop bằng 0 là lỗi khung."},
+      "keywords": "uart receiver rx state machine fsm start bit data bits stop bit framing error baud may trang thai nhan uart",
+      "nodes": [
+        {"id": "idle", "shape": "state", "title": "IDLE", "initial": true, "x": 0, "y": 60},
+        {"id": "start", "shape": "state", "title": "START", "x": 200, "y": 60},
+        {"id": "data", "shape": "state", "title": "DATA", "x": 400, "y": 60},
+        {"id": "stop", "shape": "state", "title": "STOP", "x": 600, "y": 60},
+        {"id": "ferr", "shape": "state", "title": {"en": "FRAME ERROR", "vi": "LỖI KHUNG"}, "x": 400, "y": 200}
+      ],
+      "edges": [
+        {"from": "idle", "to": "start", "label": "rx = 0"},
+        {"from": "start", "to": "data", "label": {"en": "mid start bit", "vi": "giữa bit start"}},
+        {"from": "data", "to": "data", "label": {"en": "bit < 8", "vi": "bit < 8"}},
+        {"from": "data", "to": "stop", "label": {"en": "8 bits", "vi": "đủ 8 bit"}},
+        {"from": "stop", "to": "idle", "kind": "ok", "label": "rx = 1"},
+        {"from": "stop", "to": "ferr", "kind": "fail", "label": "rx = 0"},
+        {"from": "ferr", "to": "idle", "label": {"en": "wait rx = 1", "vi": "chờ rx = 1"}}
+      ]
+    },
+    {
+      "id": "asicflow", "direction": "TB", "cat": "process", "pins": false, "top": true, "entry": {"node": "spec", "kind": "main"},
+      "title": {"en": "ASIC design flow", "vi": "Luồng thiết kế ASIC"},
+      "desc": {"en": "From the specification to tape-out: RTL and verification loop until the tests pass, then synthesis, test insertion, place and route, timing closure and physical signoff.", "vi": "Từ đặc tả tới tape-out: viết RTL và kiểm thử lặp lại tới khi đạt, rồi tổng hợp, chèn mạch kiểm tra, đặt và đi dây, đóng timing và kiểm tra vật lý."},
+      "keywords": "asic design flow rtl verification synthesis dft place route sta timing signoff drc lvs gdsii tape-out luong thiet ke",
+      "nodes": [
+        {"id": "spec", "shape": "box", "title": {"en": "Specification", "vi": "Đặc tả"}, "x": 0, "y": 0},
+        {"id": "rtl", "shape": "box", "title": {"en": "Write RTL", "vi": "Viết RTL"}, "x": 0, "y": 100},
+        {"id": "sim", "shape": "box", "title": {"en": "Simulate and verify", "vi": "Mô phỏng và kiểm thử"}, "x": 0, "y": 200},
+        {"id": "pass", "shape": "decision", "title": {"en": "Tests pass?", "vi": "Kiểm thử đạt?"}, "x": 0, "y": 300},
+        {"id": "syn", "shape": "box", "title": {"en": "Logic synthesis", "vi": "Tổng hợp logic"}, "x": 0, "y": 430},
+        {"id": "dft", "shape": "box", "title": {"en": "Insert test logic (DFT)", "vi": "Chèn mạch kiểm tra (DFT)"}, "x": 0, "y": 530},
+        {"id": "pnr", "shape": "box", "title": {"en": "Place and route", "vi": "Đặt và đi dây"}, "x": 0, "y": 630},
+        {"id": "sta", "shape": "decision", "title": {"en": "Timing met?", "vi": "Đạt timing?"}, "x": 0, "y": 730},
+        {"id": "signoff", "shape": "box", "title": {"en": "DRC, LVS signoff", "vi": "Kiểm tra DRC, LVS"}, "x": 0, "y": 860},
+        {"id": "gds", "shape": "terminator", "title": {"en": "GDSII, tape-out", "vi": "GDSII, tape-out"}, "x": 5, "y": 960}
+      ],
+      "edges": [
+        {"from": "spec", "to": "rtl"},
+        {"from": "rtl", "to": "sim"},
+        {"from": "sim", "to": "pass"},
+        {"from": "pass", "to": "syn", "kind": "ok", "label": {"en": "Yes", "vi": "Có"}},
+        {"from": "pass", "to": "rtl", "kind": "fail", "label": {"en": "No, fix RTL", "vi": "Không, sửa RTL"}},
+        {"from": "syn", "to": "dft"},
+        {"from": "dft", "to": "pnr"},
+        {"from": "pnr", "to": "sta"},
+        {"from": "sta", "to": "signoff", "kind": "ok", "label": {"en": "Yes", "vi": "Có"}},
+        {"from": "sta", "to": "pnr", "kind": "fail", "label": {"en": "No", "vi": "Không"}},
+        {"from": "signoff", "to": "gds"}
+      ]
+    }
+  ]
+}

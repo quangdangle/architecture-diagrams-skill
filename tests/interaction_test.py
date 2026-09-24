@@ -8,10 +8,12 @@
    stacked blocks, the Checks list, jumping to a problem, and the shape search.
 4. draw.io import and export with a public test file (tests/fixtures/drawio/sample.drawio):
    shapes, groups, routes and labels are drawn, and saving back keeps every cell identical.
-5. The symbol library: every symbol draws, exports to draw.io stencils, and builds a draw.io library.
+5. Quick fixes, patterns and suggestions: fix buttons in Checks, fixing every safe problem at once, inserting
+   each pattern (wired to the selected block's pins) and the suggestions for the selected block.
+6. The symbol library: every symbol draws, exports to draw.io stencils, and builds a draw.io library.
 
 Usage:
-    python3 tests/interaction_test.py [examples|editor|checks|multi|edge|drawio|manip|symbols ...]
+    python3 tests/interaction_test.py [examples|editor|checks|multi|edge|drawio|manip|assist|symbols ...]
 
 Needs Chrome, Chromium, Edge or Brave (same lookup as scripts/render_png.py).
 Exit code: 0 = all checks passed, 1 = a check failed, 2 = no browser found.
@@ -471,7 +473,8 @@ EDGE_JS = r"""
     await wait(400);
     ok('Delete while typing in a field does not delete the selected block', raw().nodes.length === 3);
     box.blur();
-    svg().querySelector('.node[data-id="x2"]').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+    /* typing in the x2 row selected x2; Shift+click adds x1 */
+    svg().querySelector('.node[data-id="x1"]').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
     await wait(200);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
     await wait(700);
@@ -655,6 +658,323 @@ SYMBOLS_JS = r"""
 """
 
 
+ASSIST_JS = r"""
+    for (var i = 0; i < 60 && !svg(); i++) await wait(100);
+    document.getElementById('edit-btn').click();
+    for (var j = 0; j < 40 && !document.querySelector('.ed-panel .ed-row'); j++) await wait(100);
+    await wait(400);
+    var raw = function () { return window.__adEditor.raw().diagrams[1]; };
+    var items = function () { return Array.prototype.map.call(document.querySelectorAll('.ed-chk-item'), function (x) { return x.textContent; }); };
+    var has = function (re) { return items().some(function (t) { return re.test(t); }); };
+    var wiring = /chưa có dây|nothing on|ngược chiều|backwards|chồng lên|on top of|hai chân ra|two outputs|nhận \d+ tín hiệu|receives \d+ signals|đi ra từ chân vào|leaves from input|đi vào chân ra|goes into output/;
+    async function applyJson(mut) {
+      var all = JSON.parse(JSON.stringify(window.__adEditor.raw()));
+      mut(all);
+      document.querySelectorAll('.ed-tab')[1].click(); await wait(150);
+      var area = document.querySelector('.ed-json'); area.value = JSON.stringify(all);
+      area.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); await wait(600);
+      document.querySelectorAll('.ed-tab')[0].click(); await wait(600);
+    }
+    function fix(re) { return Array.prototype.find.call(document.querySelectorAll('.ed-fix'), function (b) { return re.test(b.textContent); }); }
+    function row(re) { return Array.prototype.find.call(document.querySelectorAll('.ed-chk-list li'), function (li) { return re.test(li.textContent); }); }
+    function pick(id) { svg().querySelector('.node[data-id="' + id + '"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); return wait(350); }
+    function tab(k) { var sel = document.querySelector('.ed-pick select'); sel.value = String(k); sel.dispatchEvent(new Event('change', { bubbles: true })); return wait(500); }
+
+    await applyJson(function (all) {
+      var d = all.diagrams[1];
+      d.edges[1] = { from: 'ff2', to: 'ff1', fromAnchor: [0, 0.3], toAnchor: [1, 0.3] };
+      d.edges.splice(9, 1);
+      d.nodes[7].shape = 'textt';
+      d.nodes.push({ id: 'u2', title: 'U2', shape: 'and', x: 790, y: 90 });
+      d.edges[0].to = 'ff1x';
+    });
+    ok('problems in Checks come with quick-fix buttons', document.querySelectorAll('.ed-chk-list .ed-fix').length >= 6, document.querySelectorAll('.ed-chk-list .ed-fix').length + ' buttons');
+    ok('one button counts the safe fixes', /⚡/.test((document.querySelector('.ed-fixall') || {}).textContent || ''), (document.querySelector('.ed-fixall') || {}).textContent);
+    fix(/Đảo hai đầu|Swap its ends/).click();
+    await wait(700);
+    ok('the swap fix turns a backwards wire around', raw().edges[1].from === 'ff1' && raw().edges[1].to === 'ff2' && !has(/ngược chiều|backwards/), JSON.stringify(raw().edges[1]));
+    var clk = row(/sync3.*CLK/);
+    ok('a missing clock offers the clock of its own domain first', clk && /clk_b/.test(clk.querySelector('.ed-fix').textContent), clk ? clk.textContent : 'no row');
+    clk.querySelector('.ed-fix').click();
+    await wait(700);
+    var last = raw().edges[raw().edges.length - 1];
+    ok('the clock fix wires clk_b to the CLK pin', last.from === 'clkb' && last.to === 'ff3' && last.toAnchor && Math.abs(last.toAnchor.y - 0.72) < 0.01 && last.kind === 'clock' && !has(/sync3.*CLK/), JSON.stringify(last));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+    await wait(700);
+    ok('Undo takes a quick fix back in one step', has(/sync3.*CLK/) && raw().edges[1].from === 'ff1');
+    var shape = fix(/Đổi thành “text”|Use “text”/);
+    ok('an unknown shape offers the closest name', !!shape);
+    document.querySelector('.ed-fixall').click();
+    await wait(1200);
+    ok('one click fixes every safe problem', !has(/sync3.*CLK/) && !has(/U2.*U1/) && !has(/textt/), items().join(' || '));
+    var d1 = raw(), u2 = d1.nodes.filter(function (n) { return n.id === 'u2'; })[0];
+    ok('the stacked block moved to free space and the shape typo is fixed', u2 && (u2.x !== 790 || u2.y !== 90) && d1.nodes[7].shape === 'text', JSON.stringify(u2));
+    var endRow = row(/ff1x/), endFixes = endRow ? Array.prototype.map.call(endRow.querySelectorAll('.ed-fix'), function (b) { return b.textContent; }) : [];
+    ok('a short misspelled block name is left for a person to pick', endRow && !endRow.querySelector('.ed-fix.safe') && endFixes.some(function (t) { return /“ff1”/.test(t); }) && endFixes.some(function (t) { return /“ff1x”/.test(t); }), endFixes.join(' | '));
+    fix(/Nối vào “ff1”|Point it at “ff1”/).click();
+    await wait(700);
+    var e0 = raw().edges[0];
+    ok('pointing it at the block keeps the wire on its pin', e0.to === 'ff1' && e0.toAnchor && Math.abs((e0.toAnchor.x !== undefined ? e0.toAnchor.x : e0.toAnchor[0]) - 0) < 0.01 && !has(/ff1x/), JSON.stringify(e0));
+    document.querySelectorAll('.ed-tab')[2].click();
+    await wait(400);
+    var steps = Array.prototype.map.call(document.querySelectorAll('.ed-hstep'), function (h) { return h.textContent; });
+    ok('fixing everything is one step in the history', steps.filter(function (t) { return /Sửa nhanh \d+ lỗi|Quick fix: \d+ problems/.test(t); }).length === 1, steps.slice(-3).join(' | '));
+    document.querySelectorAll('.ed-tab')[0].click();
+    await wait(500);
+
+    await pick('ff3');
+    var sec = document.querySelector('.ed-sec[data-sec="patterns"]');
+    sec.open = true;
+    await wait(200);
+    ok('the pattern list has four groups of patterns', sec.querySelectorAll('.ed-pat').length === __PATCOUNT__ && sec.querySelectorAll('.ed-gtitle').length === 4, sec.querySelectorAll('.ed-pat').length + ' patterns');
+    ok('each pattern shows a small picture of itself', Array.prototype.every.call(sec.querySelectorAll('.ed-pat'), function (x) { var t = x.querySelector('svg.ed-pat-thumb'); return t && t.querySelectorAll('path').length && t.querySelectorAll('rect, g g').length; }));
+    var q = sec.querySelector('.ed-palsearch');
+    q.value = 'reset'; q.dispatchEvent(new Event('input', { bubbles: true }));
+    var found = Array.prototype.map.call(sec.querySelectorAll('.ed-pat'), function (x) { return x.getAttribute('data-pattern'); });
+    ok('the pattern search finds by name and keyword, in every group', found[0] === 'rstsync' && found.indexOf('clktree') > 0, found.join(','));
+    q.value = 'dong bo mien'; q.dispatchEvent(new Event('input', { bubbles: true }));
+    ok('the pattern search ignores Vietnamese accents', Array.prototype.some.call(sec.querySelectorAll('.ed-pat'), function (x) { return x.getAttribute('data-pattern') === 'sync2'; }));
+    q.value = ''; q.dispatchEvent(new Event('input', { bubbles: true }));
+    var n0 = raw().nodes.length;
+    sec.querySelector('.ed-pat[data-pattern="sync2"] .ed-pat-add').click();
+    await wait(900);
+    var d2 = raw(), added = d2.nodes.slice(n0);
+    ok('a pattern goes into free space next to the selected block', added.filter(function (n) { return n.shape === 'dff'; }).length === 2 && added.every(function (n) { return n.x > 700; }) && !has(/chồng lên|on top of/), JSON.stringify(added));
+    var link = d2.edges.filter(function (e) { return e.from === 'ff3' && e.to === added[0].id; })[0];
+    ok('the pattern is wired to the selected block pin by pin', link && link.fromAnchor.x === 1 && Math.abs(link.fromAnchor.y - 0.3) < 0.01 && link.toAnchor.x === 0, JSON.stringify(link));
+    var clocked = d2.edges.filter(function (e) { return e.from === 'clka' && (e.to === added[0].id || e.to === added[1].id); });
+    ok('a synchronizer takes the clock of the other domain and says so', clocked.length === 2 && /clk_a/.test(document.querySelector('.ed-status').textContent), document.querySelector('.ed-status').textContent);
+    await pick(added[1].id);
+    var sg = document.querySelector('.ed-suggest');
+    ok('selecting a flip-flop suggests the next stage and a synchronizer into the other domain', sg && !sg.hidden && /Thêm tầng flip-flop|next flip-flop/.test(sg.textContent) && /sang miền clk_b|into the clk_b domain/.test(sg.textContent), sg ? sg.textContent : '');
+    document.querySelectorAll('.ed-tab')[1].click();
+    await wait(200);
+    var area = document.querySelector('.ed-json');
+    area.value = JSON.stringify({ ops: [{ op: 'addNode', node: { id: 'lone', shape: 'dff', title: 'lone', group: 'db' }, near: 'ff2', side: 'below' }, { op: 'connect', from: 'ff2.Q', to: 'lone.D' }] });
+    area.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    await wait(700);
+    document.querySelectorAll('.ed-tab')[0].click();
+    await wait(600);
+    ok('the JSON tab applies a list of operations to the open tab', raw().nodes.some(function (n) { return n.id === 'lone' && typeof n.x === 'number'; }) && has(/lone.*CLK/), items().join(' || '));
+    await pick('lone');
+    ok('a suggested wire shows faintly on the drawing too', svg().querySelector('.ed-ghost path') && !svg().querySelector('.ed-ghost rect') && /CLK/.test(document.querySelector('.ed-ghostbar').textContent), document.querySelector('.ed-ghostbar') ? document.querySelector('.ed-ghostbar').textContent : 'no bar');
+    var sgClk = Array.prototype.find.call(document.querySelectorAll('.ed-sg'), function (b) { return /CLK.*clk_b/.test(b.textContent); });
+    ok('a block with an open clock pin suggests the clock of its domain', !!sgClk, document.querySelector('.ed-suggest').textContent);
+    sgClk.click();
+    await wait(800);
+    ok('the suggestion wires it', !has(/lone.*CLK/), items().join(' || '));
+    await pick('ff3');
+    var sec2 = document.querySelector('.ed-sec[data-sec="patterns"]');
+    sec2.open = true;
+    await wait(150);
+    sec2.querySelector('.ed-pat[data-pattern="afifo"] .ed-pat-add').click();
+    await wait(900);
+    var wd = raw().edges.filter(function (e) { return e.from === 'ff3' && e.to === 'mem'; })[0];
+    ok('a FIFO next to a flip-flop takes its output as write data', wd && wd.label === 'wdata' && wd.fromAnchor && wd.fromAnchor.x === 1 && !items().some(function (t) { return wiring.test(t); }), JSON.stringify(wd));
+    var frames = Array.prototype.map.call(svg().querySelectorAll('g.group'), function (g) { var b = g.querySelector('rect').getBBox(); return { id: g.getAttribute('data-id'), x: b.x, y: b.y, w: b.width, h: b.height }; });
+    var clash = [];
+    frames.forEach(function (a) { frames.forEach(function (b) {
+      if (/^(wdom|rdom)/.test(a.id) && /^(da|db)$/.test(b.id) && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) clash.push(a.id + '/' + b.id);
+    }); });
+    ok('its clock-domain frames stay clear of the frames already drawn', frames.length === 4 && !clash.length, clash.join(', ') || frames.map(function (f) { return f.id; }).join(','));
+
+    var ids = __PATIDS__;
+    await applyJson(function (all) { ids.forEach(function (id) { all.diagrams.push({ id: 'p-' + id, title: id, nodes: [], edges: [] }); }); });
+    var bad = [];
+    for (var k = 0; k < ids.length; k++) {
+      await tab(2 + k);
+      var s2 = document.querySelector('.ed-sec[data-sec="patterns"]');
+      s2.open = true;
+      await wait(150);
+      s2.querySelector('.ed-pat[data-pattern="' + ids[k] + '"] .ed-pat-add').click();
+      await wait(150);  /* drawn at once: the check below counts the blocks on the drawing right after the click */
+      var dd = window.__adEditor.raw().diagrams[2 + k], left = items().filter(function (t) { return wiring.test(t); });
+      if (!dd.nodes.length || left.length || !svg() || svg().querySelectorAll('.node').length !== dd.nodes.length) bad.push(ids[k] + ': ' + dd.nodes.length + ' blocks, ' + (left[0] || 'drawn ' + (svg() ? svg().querySelectorAll('.node').length : 0)));
+    }
+    ok('every pattern goes into an empty tab without problems and is drawn at once', !bad.length, bad.join(' | '));
+
+    var sample = function () { return { title: 'Sơ đồ mới', direction: 'LR', nodes: [{ id: 'a', title: 'Khối A', color: 'blue' }, { id: 'b', title: 'Khối B', color: 'teal' }], edges: [{ from: 'a', to: 'b', label: 'dữ liệu' }] }; };
+    await applyJson(function (all) { all.diagrams.push(sample(), sample(), sample(), sample()); });
+    var base = window.__adEditor.raw().diagrams.length - 4;
+    await tab(base);
+    var start = document.querySelector('.ed-start');
+    ok('a new tab asks where to start', start && start.querySelectorAll('.ed-start-card').length === 6 && start.querySelectorAll('.ed-start-pats .ed-sg').length === __PATTOP__ && start.querySelector('.ed-start-all') && start.querySelector('.ed-start-ask'), start ? start.textContent.slice(0, 80) : 'no panel');
+    start.querySelector('.ed-start-pats .ed-sg[data-pattern="sync2"]').click();
+    await wait(900);
+    var fresh = window.__adEditor.raw().diagrams[base];
+    ok('starting from a pattern replaces the two sample blocks', fresh.nodes.length === 5 && !fresh.nodes.some(function (n) { return n.id === 'a'; }) && !items().some(function (t) { return wiring.test(t); }) && !document.querySelector('.ed-start'), JSON.stringify(fresh.nodes.map(function (n) { return n.id; })));
+    await pick('sync2');
+    ok('the likely next block shows faintly on the drawing with a Tab button', svg().querySelector('.ed-ghost rect') && document.querySelector('.ed-ghostbar kbd'), document.querySelector('.ed-ghostbar') ? document.querySelector('.ed-ghostbar').textContent : 'no bar');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    await wait(900);
+    var grown = window.__adEditor.raw().diagrams[base];
+    var nextFf = grown.nodes[grown.nodes.length - 1];
+    ok('Tab adds it, wired and clocked, and the output label moves on to it', grown.nodes.length === 6 && grown.edges.some(function (e) { return e.from === nextFf.id && e.to === 'd_sync'; }) && grown.edges.some(function (e) { return e.from === 'sync2' && e.to === nextFf.id; }) && grown.edges.some(function (e) { return e.to === nextFf.id && e.kind === 'clock'; }) && !items().some(function (t) { return wiring.test(t); }), JSON.stringify(nextFf));
+    ok('the new block is selected, so Tab can go on', window.__adEditor.selected() && window.__adEditor.selected().id === nextFf.id && svg().querySelector('.ed-ghost'));
+    await tab(base + 1);
+    document.querySelector('.ed-start-card[data-type="pinout"]').click();
+    await wait(800);
+    ok('picking a kind of diagram turns the tab into it', window.__adEditor.raw().diagrams[base + 1].type === 'pinout' && !document.querySelector('.ed-start'));
+    await tab(base + 2);
+    Array.prototype.filter.call(document.querySelectorAll('.ed-start .ed-fix'), function (b) { return /hai khối mẫu|two sample/.test(b.textContent); })[0].click();
+    await wait(300);
+    var titleIn = document.querySelector('.ed-row[data-key="n:a"] textarea');
+    titleIn.focus();
+    titleIn.value = 'SRAM 64KB';
+    titleIn.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(900);
+    var byName = Array.prototype.find.call(document.querySelectorAll('.ed-sg'), function (b) { return /ký hiệu RAM|the RAM symbol/.test(b.textContent); });
+    ok('typing a block name suggests the shape that fits it', !!byName, document.querySelector('.ed-suggest') ? document.querySelector('.ed-suggest').textContent : '');
+    byName.click();
+    await wait(800);
+    ok('the name suggestion changes the shape', window.__adEditor.raw().diagrams[base + 2].nodes[0].shape === 'ram');
+    await tab(base + 3);
+    var answer = document.querySelector('.ed-start .ed-start-answer');
+    var applyBtn = function () { return Array.prototype.filter.call(document.querySelectorAll('.ed-start .tb-btn'), function (b) { return /^(Áp dụng|Apply)$/.test(b.textContent); })[0]; };
+    answer.value = 'không phải JSON';
+    applyBtn().click();
+    await wait(300);
+    ok('a broken AI answer shows why it was not applied', /JSON/.test(document.querySelector('.ed-start .ed-err').textContent) && window.__adEditor.raw().diagrams[base + 3].nodes[0].id === 'a', document.querySelector('.ed-start .ed-err').textContent);
+    answer.value = 'Đây là thay đổi:\n```json\n' + JSON.stringify({ ops: [{ op: 'renameNode', id: 'a', to: 'cpu' }, { op: 'updateNode', id: 'cpu', set: { title: 'CPU' } }] }) + '\n```';
+    applyBtn().click();
+    await wait(800);
+    var pasted = window.__adEditor.raw().diagrams[base + 3];
+    ok('an AI answer pasted into the start panel changes the tab', pasted.nodes[0].id === 'cpu' && pasted.nodes[0].title === 'CPU' && pasted.edges[0].from === 'cpu', JSON.stringify(pasted.nodes[0]));
+    ok('no script errors while testing', !window.__testErrors.length, window.__testErrors.slice(0, 3).join('; '));
+"""
+
+
+GROW_JS = r"""
+    for (var i = 0; i < 60 && !svg(); i++) await wait(100);
+    document.getElementById('edit-btn').click();
+    for (var j = 0; j < 40 && !document.querySelector('.ed-panel .ed-row'); j++) await wait(100);
+    await wait(400);
+    var tabRaw = function (k) { return window.__adEditor.raw().diagrams[k]; };
+    var items = function () { return Array.prototype.map.call(document.querySelectorAll('.ed-chk-item'), function (x) { return x.textContent; }); };
+    var wiring = /chưa có dây|ngược chiều|chồng lên|hai chân ra|nhận \d+ tín hiệu|đi ra từ chân vào|đi vào chân ra|không có khối/;
+    var problems = function () { return items().filter(function (t) { return wiring.test(t); }); };
+    var box = function () { return document.querySelector('.ed-suggest'); };
+    var sgs = function () { return Array.prototype.map.call(document.querySelectorAll('.ed-suggest .ed-sg'), function (b) { return b.textContent; }); };
+    function pick(id) { svg().querySelector('.node[data-id="' + id + '"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); return wait(350); }
+    function tab(k) { var sel = document.querySelector('.ed-pick select'); sel.value = String(k); sel.dispatchEvent(new Event('change', { bubbles: true })); return wait(500); }
+    function key(k, target) { (target || document).dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })); return wait(700); }
+    function count(k) { var d = tabRaw(k); return d.nodes.length + '/' + (d.edges || []).length + '/' + (d.groups || []).length + '/' + d.nodes.filter(function (n) { return n.group; }).length; }
+    /* a newcomer who only presses Tab (take the faint block) or 1 (the first suggestion or next step) */
+    async function follow(k, steps) {
+      var bad = [];
+      for (var s = 0; s < steps; s++) {
+        var before = count(k);
+        if (document.querySelector('.ed-ghostbar')) await key('Tab'); else await key('1');
+        if (count(k) === before) bad.push('step ' + (s + 1) + ' changed nothing');
+        var pr = problems();
+        if (pr.length) bad.push('step ' + (s + 1) + ': ' + pr[0]);
+      }
+      return bad;
+    }
+
+    await tab(0);
+    ok('with nothing selected, the box lists next steps for the whole tab', box() && !box().hidden && /Bước tiếp theo/.test(box().textContent) && /CPU RISC-V: Thêm bus AXI/.test(box().textContent), box() ? box().textContent : 'no box');
+    var socBad = await follow(0, 10), soc = tabRaw(0), titles = soc.nodes.map(function (n) { return n.title; }).join(', ');
+    ok('pressing only Tab and 1 grows an SoC ten steps without a problem', !socBad.length && soc.nodes.length >= 9, socBad.join(' | ') || titles);
+    ok('the SoC gets a bus, memory, a bridge and peripherals in order', /Bus AXI/.test(titles) && /SRAM/.test(titles) && /Cầu AXI sang APB/.test(titles) && /UART/.test(titles) && /GPIO/.test(titles), titles);
+    var framed = (soc.groups || []).length ? soc.nodes.filter(function (n) { return n.group; }).length : 0;
+    if (!framed) {
+      await key('Escape');
+      var fr = sgs().map(function (t, i) { return [t, i]; }).filter(function (x) { return /Gom \d+ ngoại vi/.test(x[0]); })[0];
+      if (fr) await key(String(fr[1] + 1));
+      framed = tabRaw(0).nodes.filter(function (n) { return n.group; }).length;
+    }
+    var bare = tabRaw(0).nodes.filter(function (n) { return n.id !== 'cpu' && !(n.color && n.desc); }).map(function (n) { return n.id; });
+    ok('every block the suggestions added has its color and description filled in', !bare.length, bare.join(', '));
+    ok('a grown SoC is offered one frame for its peripherals', framed >= 3 && !problems().length, framed + ' blocks in a frame; ' + sgs().join(' | '));
+
+    await tab(1);
+    await pick('ff0');
+    var chipBad = await follow(1, 6), chip = tabRaw(1), flops = chip.nodes.filter(function (n) { return n.shape === 'dff'; });
+    var clocked = flops.filter(function (f) { return chip.edges.some(function (e) { return e.to === f.id && e.kind === 'clock'; }); });
+    ok('a flip-flop chain grows with every stage clocked and nothing stacked', !chipBad.length && flops.length === 7 && clocked.length === 7, chipBad.join(' | ') || flops.length + ' flops, ' + clocked.length + ' clocked');
+
+    await tab(2);
+    await pick('start');
+    var flowBad = await follow(2, 3);
+    await key('2');
+    var flow = tabRaw(2), check = flow.nodes.filter(function (n) { return n.shape === 'decision'; })[0];
+    ok('a flowchart offers the next step and a yes/no check', !flowBad.length && check && window.__adEditor.selected().id === check.id, flowBad.join(' | ') || JSON.stringify(flow.nodes.map(function (n) { return n.shape || n.title; })));
+    ok('a check offers both branches and a way back', sgs().some(function (t) { return /Thêm nhánh “Có”/.test(t); }) && sgs().some(function (t) { return /quay lại/.test(t); }), sgs().join(' | '));
+    await key('3');
+    await key('1');
+    var outs = tabRaw(2).edges.filter(function (e) { return e.from === check.id; }).map(function (e) { return e.label; }).sort();
+    ok('the check ends with a Yes branch and a No branch back a step', outs.join(',') === 'Có,Không' && !problems().length, outs.join(','));
+
+    await tab(3);
+    await pick('b');
+    await key('Delete');
+    ok('deleting a block in the middle says how to join its neighbours again', /Bấm phím 1 để nối lại Nhận đơn tới Giao hàng/.test(document.querySelector('.ed-status').textContent) && /Nối lại Nhận đơn tới Giao hàng/.test(sgs()[0] || ''), document.querySelector('.ed-status').textContent + ' / ' + sgs()[0]);
+    await key('1');
+    var healed = tabRaw(3).edges.filter(function (e) { return e.from === 'a' && e.to === 'c'; })[0];
+    ok('one key joins them again, keeping the label', healed && healed.label === 'đơn mới' && !problems().length, JSON.stringify(tabRaw(3).edges));
+
+    await tab(5);
+    await pick('ffb');
+    await key('Delete');
+    await key('1');
+    var wire = tabRaw(5).edges.filter(function (e) { return e.from === 'ffa' && e.to === 'ffc'; })[0];
+    var ax = function (a) { return a ? (a.x !== undefined ? [a.x, a.y] : a) : []; };
+    ok('a wired chain is joined again pin to pin (Q to D)', wire && ax(wire.fromAnchor).join() === '1,0.3' && ax(wire.toAnchor).join() === '0,0.3' && !problems().length, JSON.stringify(wire));
+
+    await tab(4);
+    await pick('idle');
+    var fsmBad = await follow(4, 4), fsm = tabRaw(4);
+    var back = fsm.edges.filter(function (e) { return e.to === 'idle'; });
+    ok('a state machine grows and, from four states, closes the loop back to the start', !fsmBad.length && fsm.nodes.length === 4 && back.length === 1, fsmBad.join(' | ') || JSON.stringify(fsm.edges));
+
+    await tab(1);
+    var last = tabRaw(1).nodes[tabRaw(1).nodes.length - 1].id;
+    await pick(last);
+    ok('the faint block is there before it is turned off', !!document.querySelector('.ed-ghostbar'));
+    document.querySelector('.ed-sg-ghost').click();
+    await wait(400);
+    var n1 = count(1);
+    await key('Tab');
+    ok('turned off, no faint block shows and Tab adds nothing', !document.querySelector('.ed-ghostbar') && count(1) === n1 && /tắt/.test(document.querySelector('.ed-sg-ghost').textContent));
+    document.querySelector('.ed-sg-ghost').click();
+    await wait(400);
+    ok('turned on again, it comes back', !!document.querySelector('.ed-ghostbar'));
+
+    /* Tab on a block reached with the keyboard moves the focus on; after a click it takes the faint block */
+    var nodeEl = svg().querySelector('.node[data-id="' + last + '"]');
+    nodeEl.focus();
+    await key('Enter');
+    await pick(last);
+    var n2 = count(1);
+    await key('Tab', nodeEl);
+    ok('Tab on a block focused with the keyboard does not add a block', count(1) === n2, count(1) + ' vs ' + n2);
+    nodeEl = svg().querySelector('.node[data-id="' + last + '"]');
+    nodeEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+    window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+    await pick(last);
+    await key('Tab');
+    ok('after a click, Tab adds the faint block', count(1) !== n2, count(1) + ' vs ' + n2);
+
+    var area = document.querySelector('.ed-row textarea');
+    area.focus();
+    var n3 = count(1);
+    await key('1', area);
+    ok('the number keys do nothing while typing in a table', count(1) === n3);
+    area.blur();
+
+    /* the page's own tab buttons: the editor follows, so a Tab goes into the tab on screen */
+    var pageTabs = document.querySelectorAll('#tabs .tab');
+    pageTabs[3].click();
+    await wait(600);
+    ok('clicking a tab of the page moves the editor to that tab', document.querySelector('.ed-pick select').value === '3', document.querySelector('.ed-pick select').value);
+    var s3 = tabRaw(3).nodes.length, s1 = tabRaw(1).nodes.length;
+    await pick('c');
+    await key('Tab');
+    ok('and Tab adds the block to that tab, not the one before', tabRaw(1).nodes.length === s1 && tabRaw(3).nodes.length === s3 + 1, count(3) + ' / ' + count(1));
+    ok('no script errors while testing', !window.__testErrors.length, window.__testErrors.slice(0, 3).join('; '));
+"""
+
 def wrap(body):
     return ("<script>\n(async function () {\n" + COMMON_JS + "\n  try {\n" + body +
             "\n  } catch (err) {\n    ok('test script ran without errors', false, err && err.stack ? err.stack.split('\\n').slice(0, 2).join(' | ') : err);\n  }\n"
@@ -670,7 +990,7 @@ def symbols_spec():
     return {"title": "Symbols", "lang": "en", "diagrams": [{"id": "all", "title": "All symbols", "layout": "manual", "nodes": nodes}]}
 
 
-def run_page(browser, source, js, name, tmp, query="?theme=light"):
+def run_page(browser, source, js, name, tmp, query="?theme=light", budget=40000):
     page = Path(tmp) / (name + ".html")
     build = subprocess.run([sys.executable, str(SKILL / "scripts" / "build.py"), str(source), "-o", str(page), "--force"], capture_output=True, text=True)
     if build.returncode != 0:
@@ -679,7 +999,7 @@ def run_page(browser, source, js, name, tmp, query="?theme=light"):
     cut = html.rfind("</body>")
     page.write_text(html[:cut] + wrap(js) + html[cut:], encoding="utf-8")
     with tempfile.TemporaryDirectory() as profile:
-        dom = run_browser(browser, profile, 1440, 1000, 1, page.as_uri() + query, timeout=180, budget=40000)
+        dom = run_browser(browser, profile, 1440, 1000, 1, page.as_uri() + query, timeout=300, budget=budget)
     match = re.search(r'data-test-results="([^"]*)"', dom or "")
     if not match:
         return None, "no test results (page did not finish)"
@@ -702,7 +1022,7 @@ def main(argv):
     if not browser:
         print("No Chromium-based browser found; cannot run the interaction test.")
         return 2
-    wanted = set(argv[1:]) or {"examples", "editor", "checks", "multi", "edge", "drawio", "manip", "symbols"}
+    wanted = set(argv[1:]) or {"examples", "editor", "checks", "multi", "edge", "drawio", "manip", "assist", "grow", "symbols"}
     failures = 0
     with tempfile.TemporaryDirectory() as tmp:
         if "examples" in wanted:
@@ -727,6 +1047,16 @@ def main(argv):
         if "manip" in wanted:
             results, error = run_page(browser, ROOT / "tests" / "fixtures" / "manip.json", MANIP_JS, "manip", tmp, query="?theme=light&lang=vi")
             failures += report("editing on the drawing (manip.json)", results, error)
+        if "assist" in wanted:
+            pats = json.loads((SKILL / "assets" / "patterns.json").read_text(encoding="utf-8"))["patterns"]
+            js = ASSIST_JS.replace("__PATIDS__", json.dumps([p["id"] for p in pats])).replace("__PATCOUNT__", str(len(pats)))
+            js = js.replace("__PATTOP__", str(len([p for p in pats if p.get("top")])))
+            # every pattern goes into its own tab, so this page needs more (virtual) time than the others
+            results, error = run_page(browser, SKILL / "examples" / "clock-reset-tree.json", js, "assist", tmp, query="?theme=light#cdc", budget=120000)
+            failures += report("quick fixes, patterns and suggestions (clock-reset-tree.json)", results, error)
+        if "grow" in wanted:
+            results, error = run_page(browser, ROOT / "tests" / "fixtures" / "grow.json", GROW_JS, "grow", tmp)
+            failures += report("a diagram that grows and shrinks, following only suggestions (grow.json)", results, error)
         if "symbols" in wanted:
             spec_path = Path(tmp) / "symbols.json"
             spec_path.write_text(json.dumps(symbols_spec()), encoding="utf-8")

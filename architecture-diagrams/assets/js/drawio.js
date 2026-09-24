@@ -753,7 +753,7 @@ function drawioGraphPage(st) {
   items.sort(function (a, b) { return a.z - b.z; });
   var model = meta && meta.model ? meta.model : {};
   var modelAttrs = { dx: 0, dy: 0, grid: 1, gridSize: 10, guides: 1, tooltips: 1, connect: 1, arrows: 1, fold: 1, page: 1, pageScale: 1,
-    pageWidth: Math.ceil(L.width), pageHeight: Math.ceil(L.height), math: 0, shadow: 0 };
+    pageWidth: Math.ceil(outW(L)), pageHeight: Math.ceil(outH(L)), math: 0, shadow: 0 };
   Object.keys(model).forEach(function (k) { modelAttrs[k] = model[k]; });
   var head = '<mxGraphModel' + Object.keys(modelAttrs).map(function (k) { return ' ' + k + '="' + xmlEsc(modelAttrs[k]) + '"'; }).join('') + '><root>';
   var layerXml = '<mxCell id="' + xmlEsc(rootId) + '"/>' + layers.map(function (l) {

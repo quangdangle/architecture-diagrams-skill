@@ -1,0 +1,21 @@
+{
+  "title": "Sơ đồ lớn dần",
+  "lang": "vi",
+  "diagrams": [
+    {"id": "soc", "title": "SoC", "nodes": [{"id": "cpu", "title": "CPU RISC-V"}], "edges": []},
+    {"id": "chip", "title": "Chuỗi flip-flop", "layout": "manual", "route": "orthogonal",
+     "nodes": [{"id": "clk", "shape": "clock", "title": "clk", "x": 40, "y": 140}, {"id": "ff0", "shape": "dff", "title": "ff0", "x": 160, "y": 60}],
+     "edges": [{"from": "clk", "to": "ff0", "fromAnchor": [1, 0.5], "toAnchor": [0, 0.72], "kind": "clock"}]},
+    {"id": "flow", "title": "Lưu đồ", "direction": "TB", "nodes": [{"id": "start", "shape": "terminator", "title": "Bắt đầu"}], "edges": []},
+    {"id": "chain", "title": "Chuỗi thẻ", "direction": "LR",
+     "nodes": [{"id": "a", "title": "Nhận đơn"}, {"id": "b", "title": "Kiểm kho"}, {"id": "c", "title": "Giao hàng"}],
+     "edges": [{"from": "a", "to": "b", "label": "đơn mới"}, {"from": "b", "to": "c"}]},
+    {"id": "fsm", "title": "Máy trạng thái", "nodes": [{"id": "idle", "shape": "state", "title": "IDLE", "initial": true}], "edges": []},
+    {"id": "wchain", "title": "Chuỗi nối chân", "layout": "manual", "route": "orthogonal",
+     "nodes": [{"id": "clk", "shape": "clock", "title": "clk", "x": 40, "y": 220},
+               {"id": "ffa", "shape": "dff", "title": "ffa", "x": 160, "y": 60}, {"id": "ffb", "shape": "dff", "title": "ffb", "x": 300, "y": 60}, {"id": "ffc", "shape": "dff", "title": "ffc", "x": 440, "y": 60}],
+     "edges": [{"from": "ffa", "to": "ffb", "fromAnchor": [1, 0.3], "toAnchor": [0, 0.3]}, {"from": "ffb", "to": "ffc", "fromAnchor": [1, 0.3], "toAnchor": [0, 0.3]},
+               {"from": "clk", "to": "ffa", "fromAnchor": [1, 0.5], "toAnchor": [0, 0.72], "kind": "clock"}, {"from": "clk", "to": "ffb", "fromAnchor": [1, 0.5], "toAnchor": [0, 0.72], "kind": "clock"},
+               {"from": "clk", "to": "ffc", "fromAnchor": [1, 0.5], "toAnchor": [0, 0.72], "kind": "clock"}]}
+  ]
+}

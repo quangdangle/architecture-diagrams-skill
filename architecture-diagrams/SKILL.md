@@ -10,7 +10,7 @@ You write a small JSON spec; the scripts validate it and turn it into one self-c
 
 What the reader gets in the page (works offline, no install):
 - the diagram with zoom, pan, an overview map, search, click-to-highlight and a numbered walkthrough;
-- an editor behind the ✎ button: tables grouped by part (blocks, connections, groups, steps, legend, settings) with required fields marked, notes under each field, red marks on wrong values and a Checks list; drag to move, Shift+drag to wire pin to pin, multi-select, align, copy and paste, text editing on the drawing, undo with a named history;
+- an editor behind the ✎ button: tables grouped by part (blocks, connections, groups, steps, legend, settings) with required fields marked, notes under each field, red marks on wrong values and a Checks list with quick fixes for wiring and naming problems; ready-made patterns; suggestions for the selected block and next steps for the whole tab (keys 1 to 8 apply them; in a hand-placed tab the top one shows faintly and Tab adds it); a "where to start" panel for an empty tab; drag to move, Shift+drag to wire pin to pin, multi-select, align, copy and paste, text editing on the drawing, undo with a named history;
 - downloads: copy picture (for Word, PowerPoint, Teams), SVG, PNG, draw.io (every tab becomes a page), Mermaid, CSV for register, address and pin tables.
 
 `<skill>` below means the folder that holds this SKILL.md. Scripts need Python 3.8+ only; PNG, SVG and draw.io export from the command line also need Chrome, Chromium, Edge or Brave.
@@ -53,7 +53,8 @@ Symbols (`"shape": "dff"`, `"mux"`, `"pll"`, `"and"`, `"adc"`, `"nmos"` …) dra
 
 - For block-level pictures (clock trees, SoC overviews) let the layout run automatically and connect blocks without anchors.
 - For gate-level or schematic pictures use `"layout": "manual"`, give every node `x` and `y`, set `"route": "orthogonal"`, and pin each wire end with `fromAnchor` / `toAnchor` set to the pin position, such as `"toAnchor": [0, 0.72]` for a flip-flop clock.
-- Wires go from an output pin to an input pin. An input takes one source; draw several wires from an output to fan out. A clocked symbol (`dff`, `latch`, `register`, `counter`, `sync`, `clockgate`) wired pin by pin also needs its clock or enable wired. `validate.py` and the editor's Checks list report every break of these rules.
+- Wires go from an output pin to an input pin. An input takes one source; draw several wires from an output to fan out. A clocked symbol (`dff`, `dffr`, `latch`, `register`, `counter`, `sync`, `clockgate`) wired pin by pin also needs its clock or enable wired. `validate.py` and the editor's Checks list report every break of these rules.
+- **Ready-made patterns** (30, in four groups) save drawing common pieces by hand. Circuits: `sync2`, `rstsync`, `icg`, `pulsesync`, `clkdiv2`, `edgedet`, `shiftreg`, `regen`, `lfsr`. SoC and IP: `socmin`, `axi2apb`, `tlul`, `afifo`, `uart`, `spi`, `clktree`, `tb` (UVM testbench). Software: `web3tier`, `micro`, `events`, `serverless`, `datapipe`, `mlpipe`, `k8s`, `cicd`. Processes: `approval`, `login`, `fsmctl`, `uartrx`, `asicflow`. `python3 <skill>/scripts/assist.py diagram.json --pattern sync2 --near ff3 -o diagram.json` puts one next to block `ff3`, wired to its pins; `--patterns` lists them.
 - Edge kinds `clock`, `reset` and `bus` give clock, reset and bus lines their usual look; name them in `legend.edges`.
 - `ports` on a card (`{"in": ["clk", "rst_n", "din[7:0]"], "out": [...]}`) lists signals of an RTL module without drawing pins.
 
@@ -63,13 +64,17 @@ Symbols (`"shape": "dff"`, `"mux"`, `"pll"`, `"and"`, `"adc"`, `"nmos"` …) dra
 - To change it with code or an AI, turn it into a spec: `export.py design.drawio --format spec -o design.json`. Edit the JSON, keep every `drawio` object as it is, then `export.py design.json --format drawio -o design.drawio`. Cells you did not touch come back unchanged.
 - Symbols of this skill go to draw.io as editable stencils. `export.py x.json --format library` writes them as a draw.io shape library (File > Open Library in draw.io).
 
+## Changing a diagram in small steps
+
+For a small change (add a block, wire one pin to another, fix what the checks report) send editing operations instead of rewriting the spec: `python3 <skill>/scripts/assist.py diagram.json --ops ops.json -o diagram.json`. `--suggest` lists every problem with its fix as operations, the next steps for the whole tab (at most five, most useful first) and likely next blocks for each block; apply the ones that fit. The format is in `references/spec.md` (sections 11 and 12). These commands run the page's own code in a headless browser, so they need Chrome, Chromium, Edge or Brave.
+
 ## Starting from code
 
 `scan_code.py <repo> -o draft.json [--lang vi]` reads imports in Python, JavaScript/TypeScript, Go, Java/Kotlin and C/C++, and module instances with their ports in Verilog/SystemVerilog. It writes a first draft: an overview of folders and imports, drill-downs for the largest folders, and an RTL module hierarchy. Treat it as a draft: rename blocks, write real descriptions and add the walkthrough.
 
 ## Other AI tools, MCP and people without AI
 
-- **MCP:** `scripts/mcp_server.py` is a stdio MCP server (standard library only) with tools `diagram_guide`, `diagram_validate`, `diagram_build`, `diagram_open_editor`, `diagram_export`, `diagram_import_drawio`, `diagram_scan_code` and `diagram_symbols`. Register it in Claude Code (`claude mcp add architecture-diagrams -- python3 <skill>/scripts/mcp_server.py`), Codex CLI, Cursor, VS Code, Gemini CLI or Claude Desktop.
+- **MCP:** `scripts/mcp_server.py` is a stdio MCP server (standard library only) with tools `diagram_guide`, `diagram_validate`, `diagram_build`, `diagram_open_editor`, `diagram_export`, `diagram_import_drawio`, `diagram_scan_code`, `diagram_symbols`, `diagram_patterns`, `diagram_insert_pattern`, `diagram_apply_ops` and `diagram_suggest`. Register it in Claude Code (`claude mcp add architecture-diagrams -- python3 <skill>/scripts/mcp_server.py`), Codex CLI, Cursor, VS Code, Gemini CLI or Claude Desktop.
 - **Any chat AI:** the page's JSON tab has "Copy prompt for AI": the spec format, every symbol with its pins and the current diagram, ready to paste into ChatGPT, Gemini or Copilot. The JSON the AI returns is pasted back and applied; code fences are ignored.
 - **No AI:** `build.py --editor -o editor.html` makes an empty editor page; people fill in the tables, paste rows from Excel, drag and wire.
 
@@ -152,7 +157,8 @@ Symbols (`"shape": "dff"`, `"mux"`, `"pll"`, `"and"`, `"adc"`, `"nmos"` …) dra
 - `scripts/export.py`: draw.io, SVG, PNG, Mermaid, CSV, HTML, spec JSON or a draw.io symbol library.
 - `scripts/render_png.py`: screenshot for self-review.
 - `scripts/scan_code.py`: draft spec from a source repository.
+- `scripts/assist.py`: patterns, editing operations, and every problem with its fix.
 - `scripts/mcp_server.py`: the same features for any MCP client.
 - `references/spec.md`, `references/symbols.md`, `references/design-guide.md`: fields, symbols with pins, patterns.
-- `assets/`: the page template, renderer and editor (`js/`), draw.io stencils (Apache 2.0), Lucide icons (ISC), dagre (MIT), the AI prompt. Do not edit them per diagram.
+- `assets/`: the page template, renderer and editor (`js/`), the patterns (`patterns.json`), draw.io stencils (Apache 2.0), Lucide icons (ISC), dagre (MIT), the AI prompt. Do not edit them per diagram.
 - `examples/`: complete specs for every type, in English and Vietnamese.

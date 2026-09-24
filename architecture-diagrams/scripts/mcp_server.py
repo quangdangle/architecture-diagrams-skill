@@ -32,10 +32,11 @@ sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
+import assist  # noqa: E402
 from build import ai_prompt  # noqa: E402
 from validate import SYMBOL_ALIASES, SYMBOL_PINS, SYMBOL_SIZES, validate_spec  # noqa: E402
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
 FORMATS = ("drawio", "svg", "png", "mermaid", "csv", "html", "spec", "library")
 DRAWIO_SUFFIXES = (".drawio", ".xml", ".svg", ".dio")
@@ -44,7 +45,9 @@ INSTRUCTIONS = (
     "timing diagrams, register maps, address maps, datasheet chip diagrams and pinouts. Call diagram_guide first for the JSON "
     "format, write the spec, call diagram_validate and fix what it reports, then diagram_build (or diagram_open_editor so the "
     "user can adjust it by hand) and diagram_export for draw.io, SVG or PNG. Use diagram_import_drawio to edit an existing "
-    "draw.io file and diagram_scan_code to start from a source repository."
+    "draw.io file and diagram_scan_code to start from a source repository. To change a diagram in small steps, use "
+    "diagram_apply_ops (add, update, remove, connect pin to pin) and diagram_insert_pattern (ready-made circuits and "
+    "architectures, wired to a block's pins); diagram_suggest lists what is wrong with a fix for each, likely next blocks, and the next steps for the whole tab."
 )
 
 SPEC_OR_PATH = {
@@ -86,6 +89,25 @@ TOOLS = [
     {"name": "diagram_symbols",
      "description": "List the symbols (logic gates, flip-flops, mux, PLL, ADC, passives, transistors, software icons and shapes) with their pins. Filter by text or category.",
      "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "category": {"type": "string"}}}},
+    {"name": "diagram_patterns",
+     "description": "List the 30 ready-made patterns in four groups: digital circuits (synchronizers, clock gate, divider, edge detector, shift register, LFSR…), SoC, IP and verification (minimal RISC-V SoC, AXI/APB, TL-UL, async FIFO, UART, SPI, clock tree, UVM testbench), software (web, microservices, events, serverless, data and ML pipelines, Kubernetes, CI/CD) and flowcharts or state machines. Shows the pins each one wires to a selected block.",
+     "inputSchema": {"type": "object", "properties": {"lang": {"type": "string", "enum": ["en", "vi"]}}}},
+    {"name": "diagram_insert_pattern",
+     "description": "Insert a ready-made pattern into a block-diagram tab. With near, it goes next to that block and is wired to its pins (for example the block's Q pin into the synchronizer's D pin, or a clock into the pattern's clock pins). Returns the new spec and what the checks still find, each problem with a fix.",
+     "inputSchema": {"type": "object", "required": ["pattern"], "properties": dict(SPEC_OR_PATH, pattern={"type": "string", "description": "Pattern id from diagram_patterns."},
+                                                                               near={"type": "string", "description": "Block id to place it next to and wire it to."},
+                                                                               clock={"type": "string", "description": "Clock source block for the pattern's clock pins; for a synchronizer, the clock of the destination domain."},
+                                                                               diagram={"type": "string", "description": "Tab id (default: the first block-diagram tab)."},
+                                                                               output={"type": "string", "description": "Where to write the changed spec (.json)."})}},
+    {"name": "diagram_apply_ops",
+     "description": 'Change a block-diagram tab with editing operations instead of rewriting the spec: addNode {node, near?, side?}, updateNode {id, set, unset}, removeNode {id}, renameNode {id, to}, connect {from, to, kind?, label?} where an end is "block" or "block.PIN", disconnect {from, to} or {edge}, reverseEdge {edge}, updateEdge {edge, set}, addGroup {group}, updateGroup {id, set}, removeStep {index}, updateDiagram {set: {layout, route, direction, title}}. All or nothing: one failing operation changes nothing and the errors say why.',
+     "inputSchema": {"type": "object", "required": ["ops"], "properties": dict(SPEC_OR_PATH, ops={"type": ["array", "object"], "description": 'The operations, or {"ops": [...]}.'},
+                                                                           diagram={"type": "string", "description": "Tab id (default: the first block-diagram tab)."},
+                                                                           output={"type": "string", "description": "Where to write the changed spec (.json)."})}},
+    {"name": "diagram_suggest",
+     "description": "What the editor would suggest: every problem on a block-diagram tab (reversed wires, missing clocks, stacked blocks, unknown shapes…) with ready-to-apply fixes as operations, likely next blocks for each block or for one block (node), and without node the next steps for the whole tab (up to five, most useful first).",
+     "inputSchema": {"type": "object", "properties": dict(SPEC_OR_PATH, node={"type": "string", "description": "Only suggestions for this block."},
+                                                          diagram={"type": "string", "description": "Tab id (default: the first block-diagram tab)."})}},
 ]
 RESOURCES = [
     {"uri": "architecture-diagrams://guide", "name": "Spec format and symbols", "mimeType": "text/markdown",
@@ -289,9 +311,85 @@ def tool_symbols(args):
     return "\n".join(lines) or "No symbol matches.", {"symbols": rows}
 
 
+def tool_patterns(args):
+    rows = assist.pattern_list(args.get("lang") or "en")
+    lines = []
+    for p in rows:
+        wires = []
+        if p["inputs"]:
+            wires.append("input " + " + ".join(p["inputs"][0]))
+        if p["outputs"]:
+            wires.append("output " + p["outputs"][0])
+        if p["clocks"]:
+            wires.append("clock " + " + ".join(p["clocks"][0]))
+        if p.get("entry"):
+            wires.append("a selected block feeds " + p["entry"])
+        lines.append(f'{p["id"]} [{p["category"]}] {p["title"]}: {p["description"]}' + (f' ({"; ".join(wires)})' if wires else ""))
+    return "\n".join(lines), {"patterns": rows}
+
+
+def edited(args, source, result):
+    """Writes the changed spec and returns the report, with the spec inline while it is small."""
+    if args.get("output"):
+        out = Path(args["output"]).expanduser()
+        out.parent.mkdir(parents=True, exist_ok=True)
+    elif source.parent == out_dir():
+        out = source
+    else:
+        out = source.with_name(source.stem + "-edited.json")
+    body = json.dumps(result["spec"], ensure_ascii=False, indent=2)
+    out.write_text(body, encoding="utf-8")
+    text = assist.describe(result) + f"\nSpec: {out}"
+    if len(body) <= 60000:
+        text += "\n\n" + body
+    return text, {"path": str(out.resolve()), "checks": result.get("checks", []), "added": result.get("added", [])}
+
+
+def assist_input(args):
+    source, spec = load_input(args)
+    if spec is None:
+        raise ToolError("this tool reads JSON specs; for a draw.io file call diagram_import_drawio first")
+    return source, spec
+
+
+def tool_insert_pattern(args):
+    source, spec = assist_input(args)
+    try:
+        result = assist.insert_pattern(spec, str(args.get("pattern") or ""), args.get("near"), args.get("diagram"), args.get("clock"))
+    except assist.AssistError as exc:
+        raise ToolError(str(exc))
+    return edited(args, source, result)
+
+
+def tool_apply_ops(args):
+    source, spec = assist_input(args)
+    ops = args.get("ops")
+    if isinstance(ops, str):
+        try:
+            ops = json.loads(ops)
+        except ValueError as exc:
+            raise ToolError(f"ops is not valid JSON: {exc}")
+    try:
+        result = assist.apply_ops(spec, ops, args.get("diagram"))
+    except assist.AssistError as exc:
+        raise ToolError(str(exc))
+    return edited(args, source, result)
+
+
+def tool_suggest(args):
+    source, spec = assist_input(args)
+    try:
+        result = assist.suggest(spec, args.get("node"), args.get("diagram"))
+    except assist.AssistError as exc:
+        raise ToolError(str(exc))
+    return assist.describe(result), {"checks": result.get("checks", []), "nextSteps": result.get("nextSteps", []), "suggestions": result.get("suggestions", []),
+                                     "truncated": bool(result.get("truncated"))}
+
+
 HANDLERS = {"diagram_guide": tool_guide, "diagram_validate": tool_validate, "diagram_build": tool_build,
             "diagram_open_editor": tool_open_editor, "diagram_export": tool_export, "diagram_import_drawio": tool_import_drawio,
-            "diagram_scan_code": tool_scan_code, "diagram_symbols": tool_symbols}
+            "diagram_scan_code": tool_scan_code, "diagram_symbols": tool_symbols, "diagram_patterns": tool_patterns,
+            "diagram_insert_pattern": tool_insert_pattern, "diagram_apply_ops": tool_apply_ops, "diagram_suggest": tool_suggest}
 
 
 def read_resource(uri):
