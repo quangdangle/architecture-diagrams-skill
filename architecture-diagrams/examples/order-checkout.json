@@ -1,0 +1,380 @@
+{
+  "title": "Hệ thống bán hàng: thanh toán đơn hàng",
+  "subtitle": "Ví dụ một tài liệu có hai sơ đồ: luồng bình thường và luồng xử lý lỗi.",
+  "lang": "vi",
+  "diagrams": [
+    {
+      "id": "checkout",
+      "title": "Luồng thanh toán",
+      "tag": "Phần mềm",
+      "summary": "Khách bấm thanh toán, **dịch vụ đơn hàng** điều phối mọi việc, **dịch vụ thanh toán** nói chuyện với ngân hàng. Việc chậm như gửi thông báo và tạo vận đơn chạy sau, qua **hàng đợi sự kiện**.",
+      "direction": "LR",
+      "groups": [
+        {
+          "id": "client",
+          "label": "Phía khách hàng",
+          "icon": "📱",
+          "color": "blue"
+        },
+        {
+          "id": "services",
+          "label": "Dịch vụ nội bộ",
+          "icon": "⚙️",
+          "color": "teal"
+        },
+        {
+          "id": "infra",
+          "label": "Hạ tầng",
+          "icon": "🏗️",
+          "color": "slate"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "app",
+          "title": "Ứng dụng web và di động",
+          "icon": "📱",
+          "desc": "Khách chọn hàng và bấm thanh toán.",
+          "color": "blue",
+          "group": "client",
+          "size": "lg"
+        },
+        {
+          "id": "gw",
+          "title": "API Gateway",
+          "icon": "🚪",
+          "desc": "Xác thực người dùng và giới hạn số lần gọi.",
+          "color": "slate",
+          "group": "infra"
+        },
+        {
+          "id": "order",
+          "title": "Dịch vụ đơn hàng",
+          "icon": "🧾",
+          "desc": "Tạo đơn, giữ hàng trong kho và tính tổng tiền.",
+          "color": "teal",
+          "group": "services",
+          "size": "lg"
+        },
+        {
+          "id": "stock",
+          "title": "Dịch vụ kho",
+          "icon": "📦",
+          "desc": "Giữ tạm số lượng hàng cho đơn.",
+          "color": "teal",
+          "group": "services",
+          "size": "sm"
+        },
+        {
+          "id": "pay",
+          "title": "Dịch vụ thanh toán",
+          "icon": "💳",
+          "desc": "Gửi lệnh sang cổng thanh toán và nhận kết quả.",
+          "color": "teal",
+          "group": "services",
+          "size": "lg"
+        },
+        {
+          "id": "psp",
+          "title": "Cổng thanh toán",
+          "icon": "🏦",
+          "desc": "Ngân hàng hoặc ví điện tử xử lý tiền.",
+          "color": "slate",
+          "external": true
+        },
+        {
+          "id": "db",
+          "title": "Cơ sở dữ liệu đơn hàng",
+          "icon": "🗃️",
+          "desc": "Lưu đơn và trạng thái thanh toán.",
+          "color": "slate",
+          "group": "infra",
+          "size": "sm"
+        },
+        {
+          "id": "bus",
+          "title": "Hàng đợi sự kiện",
+          "icon": "📨",
+          "desc": "Chuyển sự kiện cho các dịch vụ xử lý sau.",
+          "color": "slate",
+          "group": "infra"
+        },
+        {
+          "id": "notify",
+          "title": "Dịch vụ thông báo",
+          "icon": "🔔",
+          "desc": "Gửi email và tin nhắn xác nhận.",
+          "color": "teal",
+          "group": "services",
+          "size": "sm"
+        },
+        {
+          "id": "ship",
+          "title": "Dịch vụ giao hàng",
+          "icon": "🚚",
+          "desc": "Tạo vận đơn với đơn vị vận chuyển.",
+          "color": "teal",
+          "group": "services",
+          "size": "sm"
+        }
+      ],
+      "edges": [
+        {
+          "from": "app",
+          "to": "gw",
+          "label": "yêu cầu thanh toán",
+          "kind": "main"
+        },
+        {
+          "from": "gw",
+          "to": "order",
+          "label": "đơn hàng",
+          "kind": "main"
+        },
+        {
+          "from": "order",
+          "to": "stock",
+          "label": "giữ hàng"
+        },
+        {
+          "from": "order",
+          "to": "db",
+          "label": "lưu đơn",
+          "kind": "storage"
+        },
+        {
+          "from": "order",
+          "to": "pay",
+          "label": "số tiền cần trả",
+          "kind": "main"
+        },
+        {
+          "from": "pay",
+          "to": "psp",
+          "label": "lệnh thanh toán",
+          "kind": "main"
+        },
+        {
+          "from": "psp",
+          "to": "pay",
+          "label": "kết quả",
+          "kind": "ok"
+        },
+        {
+          "from": "pay",
+          "to": "order",
+          "label": "đã thanh toán",
+          "kind": "ok"
+        },
+        {
+          "from": "order",
+          "to": "bus",
+          "label": "sự kiện đã thanh toán",
+          "kind": "async"
+        },
+        {
+          "from": "bus",
+          "to": "notify",
+          "kind": "async"
+        },
+        {
+          "from": "bus",
+          "to": "ship",
+          "kind": "async"
+        }
+      ],
+      "steps": [
+        {
+          "node": "app",
+          "text": "Khách bấm nút thanh toán trên ứng dụng."
+        },
+        {
+          "node": "order",
+          "text": "Dịch vụ đơn hàng tạo đơn, giữ hàng trong kho và lưu đơn vào cơ sở dữ liệu."
+        },
+        {
+          "edge": [
+            "pay",
+            "psp"
+          ],
+          "text": "Dịch vụ thanh toán gửi lệnh sang ngân hàng hoặc ví điện tử."
+        },
+        {
+          "edge": [
+            "pay",
+            "order"
+          ],
+          "text": "Khi tiền về, đơn được đánh dấu là đã thanh toán."
+        },
+        {
+          "node": "bus",
+          "text": "Đơn hàng phát một sự kiện lên hàng đợi. Dịch vụ thông báo và dịch vụ giao hàng tự nhận phần việc của mình."
+        }
+      ],
+      "legend": {
+        "colors": {
+          "blue": "Phía khách hàng",
+          "teal": "Dịch vụ nội bộ",
+          "slate": "Hạ tầng và bên ngoài"
+        }
+      }
+    },
+    {
+      "id": "failures",
+      "title": "Khi thanh toán lỗi",
+      "tag": "Xử lý lỗi",
+      "summary": "Khi thanh toán lỗi, hệ thống **xem đó có phải lỗi tạm thời không**. Lỗi tạm thời được thử lại có giới hạn; lỗi hẳn thì **hủy đơn**, trả hàng về kho và báo cho khách để thanh toán lại.",
+      "direction": "TB",
+      "nodes": [
+        {
+          "id": "pay",
+          "title": "Dịch vụ thanh toán",
+          "icon": "💳",
+          "desc": "Gửi lệnh thanh toán và chờ kết quả.",
+          "color": "teal",
+          "size": "lg"
+        },
+        {
+          "id": "psp",
+          "title": "Cổng thanh toán",
+          "icon": "🏦",
+          "desc": "Có thể từ chối hoặc trả lời chậm.",
+          "color": "slate",
+          "external": true
+        },
+        {
+          "id": "check",
+          "title": "Lỗi tạm thời?",
+          "desc": "Mất kết nối hoặc hết giờ là lỗi tạm thời; thẻ bị từ chối là lỗi hẳn.",
+          "color": "amber",
+          "shape": "decision"
+        },
+        {
+          "id": "retry",
+          "title": "Thử lại có giới hạn",
+          "icon": "🔁",
+          "desc": "Tối đa 3 lần, lần sau chờ lâu hơn lần trước.",
+          "color": "amber"
+        },
+        {
+          "id": "ops",
+          "title": "Cảnh báo vận hành",
+          "icon": "🚨",
+          "desc": "Báo nhóm trực khi lỗi lặp lại nhiều.",
+          "color": "slate",
+          "size": "sm"
+        },
+        {
+          "id": "cancel",
+          "title": "Hủy đơn",
+          "icon": "🛑",
+          "desc": "Đổi trạng thái đơn và ghi lại lý do.",
+          "color": "red",
+          "size": "lg"
+        },
+        {
+          "id": "release",
+          "title": "Trả hàng về kho",
+          "icon": "📦",
+          "desc": "Bỏ giữ hàng để khách khác mua được.",
+          "color": "teal",
+          "size": "sm"
+        },
+        {
+          "id": "notify",
+          "title": "Báo khách",
+          "icon": "💬",
+          "desc": "Gửi tin nhắn kèm đường link thanh toán lại.",
+          "color": "teal",
+          "size": "sm"
+        }
+      ],
+      "edges": [
+        {
+          "from": "pay",
+          "to": "psp",
+          "label": "lệnh thanh toán",
+          "kind": "main"
+        },
+        {
+          "from": "psp",
+          "to": "pay",
+          "label": "từ chối hoặc hết giờ",
+          "kind": "fail"
+        },
+        {
+          "from": "pay",
+          "to": "check",
+          "label": "kết quả lỗi"
+        },
+        {
+          "from": "check",
+          "to": "retry",
+          "label": "có, còn lượt thử"
+        },
+        {
+          "from": "retry",
+          "to": "pay",
+          "label": "gửi lại",
+          "kind": "feedback"
+        },
+        {
+          "from": "retry",
+          "to": "ops",
+          "label": "lỗi lặp lại",
+          "kind": "async"
+        },
+        {
+          "from": "check",
+          "to": "cancel",
+          "label": "không, hoặc hết lượt",
+          "kind": "fail"
+        },
+        {
+          "from": "cancel",
+          "to": "release"
+        },
+        {
+          "from": "cancel",
+          "to": "notify"
+        }
+      ],
+      "steps": [
+        {
+          "edge": [
+            "psp",
+            "pay"
+          ],
+          "text": "Cổng thanh toán trả về lỗi hoặc không trả lời kịp."
+        },
+        {
+          "node": "check",
+          "text": "Hệ thống xem đây có phải lỗi tạm thời không, ví dụ mất kết nối hay hết giờ."
+        },
+        {
+          "node": "retry",
+          "text": "Lỗi tạm thời được thử lại tối đa 3 lần, lần sau chờ lâu hơn lần trước."
+        },
+        {
+          "node": "cancel",
+          "text": "Nếu bị từ chối hẳn hoặc đã hết lượt thử, đơn bị hủy."
+        },
+        {
+          "node": "notify",
+          "text": "Hàng được trả về kho và khách nhận tin nhắn kèm đường link để thanh toán lại."
+        }
+      ],
+      "legend": {
+        "colors": {
+          "teal": "Dịch vụ nội bộ",
+          "amber": "Kiểm tra và thử lại",
+          "red": "Dừng hẳn",
+          "slate": "Vận hành và bên ngoài"
+        },
+        "edges": {
+          "normal": "Bước tiếp theo"
+        }
+      }
+    }
+  ]
+}

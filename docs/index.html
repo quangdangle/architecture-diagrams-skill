@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture Diagrams</title>
+<meta name="description" content="Vẽ sơ đồ phần mềm và vi mạch thành một trang HTML tương tác, chạy không cần mạng, mở và lưu file draw.io.">
+<style>
+:root {
+  --bg: #f3f5f9; --surface: #ffffff; --border: #e2e7ef; --text: #0f172a; --muted: #5b6b80; --accent: #2563eb; --accent-soft: #eaf1ff;
+  --shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 6px 20px rgba(15, 23, 42, .06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0a0f1c; --surface: #111827; --border: #223047; --text: #e5e9f0; --muted: #95a3b8; --accent: #5b9dff; --accent-soft: rgba(91, 157, 255, .14);
+          --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 8px 24px rgba(0, 0, 0, .35); color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif; line-height: 1.55; }
+main { max-width: 1180px; margin: 0 auto; padding: 40px 16px 64px; }
+h1 { font-size: clamp(1.7rem, 4vw, 2.4rem); line-height: 1.15; margin: 0 0 10px; letter-spacing: -.01em; }
+.lead { font-size: 1.08rem; color: var(--muted); max-width: 820px; margin: 0 0 6px; }
+.en { color: var(--muted); font-size: .92rem; margin: 0 0 22px; max-width: 820px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 34px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 10px; font-weight: 650; text-decoration: none; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn:hover { border-color: var(--accent); }
+h2 { font-size: 1.15rem; margin: 34px 0 14px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 18px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; text-decoration: none; color: inherit; }
+.card:hover { border-color: var(--accent); }
+.card .shot { height: 190px; background: var(--bg) center top / cover no-repeat; border-bottom: 1px solid var(--border); }
+.card .body { padding: 14px 16px 16px; }
+.card h3 { margin: 0 0 4px; font-size: 1rem; }
+.card p { margin: 0; color: var(--muted); font-size: .9rem; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.tag { font-size: .72rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 9px; }
+.ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.way { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.way strong { display: block; margin-bottom: 4px; }
+.way span { color: var(--muted); font-size: .9rem; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85em; background: var(--accent-soft); padding: 1px 5px; border-radius: 5px; }
+footer { margin-top: 44px; color: var(--muted); font-size: .85rem; }
+footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Architecture Diagrams</h1>
+  <p class="lead">Vẽ sơ đồ phần mềm và thiết kế vi mạch thành một trang HTML tương tác. Trang chạy không cần mạng, mở và lưu được file draw.io, và có trình sửa với kiểm tra nhập liệu và nối dây.</p>
+  <p class="en">Diagrams for software and chip design as one interactive HTML page that works offline, opens and saves draw.io files, and has an editor with input and wiring checks.</p>
+  <div class="actions">
+    <a class="btn primary" href="editor.html">✎ Mở trình sửa trống · Open the editor</a>
+    <a class="btn" href="https://github.com/quangdangle/architecture-diagrams-skill">GitHub</a>
+    <a class="btn" href="https://github.com/quangdangle/architecture-diagrams-skill/releases">Tải về · Download</a>
+  </div>
+
+  <h2>Trang mẫu · Examples</h2>
+  <div class="grid">
+    <a class="card" href="clock-reset-tree.html"><div class="shot" style="background-image:url(img/clock-tree.png)"></div><div class="body"><h3>Cây clock và reset, mạch CDC</h3><p>PLL, bộ chọn clock, clock gate, bộ đồng bộ; mạch CDC vẽ tới từng chân. Clock tree and a pin-level CDC circuit.</p><div class="tags"><span class="tag">IC</span><span class="tag">Symbols</span></div></div></a>
+    <a class="card" href="mcu-datasheet.html"><div class="shot" style="background-image:url(img/datasheet.png)"></div><div class="body"><h3>Hình datasheet vi điều khiển</h3><p>Sơ đồ chip có bus và miền nguồn, sơ đồ chân LQFP48. Datasheet block diagram and pinout.</p><div class="tags"><span class="tag">Chip</span><span class="tag">Pinout</span></div></div></a>
+    <a class="card" href="uart-ip.html"><div class="shot" style="background-image:url(img/timing.png)"></div><div class="body"><h3>IP UART</h3><p>Sơ đồ khối có cổng, máy trạng thái, giản đồ thời gian APB và UART, bản đồ thanh ghi. Block, FSM, timing and registers.</p><div class="tags"><span class="tag">WaveDrom</span><span class="tag">Registers</span></div></div></a>
+    <a class="card" href="soc-block-diagram.html"><div class="shot" style="background-image:url(img/soc.png)"></div><div class="body"><h3>Sơ đồ khối SoC</h3><p>Bus, bộ nhớ, ngoại vi, các bước khởi động và bản đồ địa chỉ. SoC blocks, boot walkthrough and address map.</p><div class="tags"><span class="tag">SoC</span><span class="tag">Memory map</span></div></div></a>
+    <a class="card" href="chip-design-flow.html"><div class="shot" style="background-image:url(img/design-flow.png)"></div><div class="body"><h3>Quy trình thiết kế chip</h3><p>Các giai đoạn và vòng làm lại. Design flow with rework loops.</p><div class="tags"><span class="tag">Process</span></div></div></a>
+    <a class="card" href="order-checkout.html"><div class="shot" style="background-image:url(img/checkout.png)"></div><div class="body"><h3>Luồng đặt hàng</h3><p>Luồng chính và cách xử lý lỗi, mỗi phần một tab. Checkout flow and failure handling.</p><div class="tags"><span class="tag">Software</span></div></div></a>
+    <a class="card" href="web-app-icons.html"><div class="shot" style="background-image:url(img/web-app-dark.png)"></div><div class="body"><h3>Kiến trúc web app</h3><p>Biểu tượng chuẩn cho server, database, cloud, bảo mật. Web app architecture with standard icons.</p><div class="tags"><span class="tag">Icons</span></div></div></a>
+    <a class="card" href="drawio-sample.html"><div class="shot" style="background-image:url(img/drawio-sample.png)"></div><div class="body"><h3>Mở file draw.io</h3><p>Một file draw.io mẫu, vẽ bằng thư viện hình gốc của draw.io; sửa xong lưu lại thành draw.io. A draw.io file opened, edited and saved back.</p><div class="tags"><span class="tag">draw.io</span></div></div></a>
+    <a class="card" href="editor.html"><div class="shot" style="background-image:url(img/editor-checks.png)"></div><div class="body"><h3>Trình sửa</h3><p>Bảng nhập liệu có ô bắt buộc và kiểm tra lỗi, kéo thả, nối dây vào chân, chọn nhiều khối. Tables with checks, drag and drop, pin wiring.</p><div class="tags"><span class="tag">Editor</span></div></div></a>
+  </div>
+
+  <h2>Bốn cách dùng · Four ways to use it</h2>
+  <div class="ways">
+    <div class="way"><strong>Claude</strong><span>Cài thư mục <code>architecture-diagrams</code> làm skill rồi nhờ Claude vẽ. Install the folder as a skill.</span></div>
+    <div class="way"><strong>MCP</strong><span>Đăng ký <code>scripts/mcp_server.py</code> cho Codex CLI, Cursor, VS Code, Gemini CLI. Register the MCP server.</span></div>
+    <div class="way"><strong>AI chat bất kỳ · Any AI chat</strong><span>Trong trình sửa, tab JSON, bấm "Chép prompt cho AI" rồi dán vào ChatGPT hoặc Gemini. Copy the prompt, paste the answer back.</span></div>
+    <div class="way"><strong>Không cần AI · No AI</strong><span>Mở trình sửa, nhập bảng, dán từ Excel, kéo thả. Fill in tables, paste from Excel, drag and drop.</span></div>
+  </div>
+
+  <footer>MIT License. Bên thứ ba: dagre (MIT), Lucide (ISC), thư viện hình draw.io (Apache 2.0). Xem <a href="https://github.com/quangdangle/architecture-diagrams-skill/blob/main/THIRD_PARTY_NOTICES.md">THIRD_PARTY_NOTICES.md</a>.</footer>
+</main>
+</body>
+</html>

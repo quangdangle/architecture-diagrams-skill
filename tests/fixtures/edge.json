@@ -1,0 +1,21 @@
+{
+  "title": "Edge cases <b>stay text</b>",
+  "lang": "en",
+  "diagrams": [
+    {
+      "id": "e",
+      "title": "Tricky text",
+      "summary": "Titles with markup, quotes and scripts must show as plain text.",
+      "nodes": [
+        { "id": "x1", "title": "<img src=x onerror=\"window.__pwned=1\">", "desc": "</script><script>window.__pwned=2</script>" },
+        { "id": "x2", "title": "Ümlaut, 中文, tiếng Việt có dấu", "desc": "Line one\nLine two" },
+        { "id": "x3", "title": "A very long title that keeps going and going to test wrapping inside a card" }
+      ],
+      "edges": [
+        { "from": "x1", "to": "x2", "label": "\"quotes\" & <angle>" },
+        { "from": "x2", "to": "x2", "label": "self loop" },
+        { "from": "x2", "to": "x3" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+These stencil libraries are copied unchanged from draw.io (https://github.com/jgraph/drawio),
+commit 82af434539c3449d99275b91a91b6b99998a7d58, folder src/main/webapp/stencils.
+Copyright JGraph Ltd. Licensed under the Apache License 2.0 (see LICENSE-drawio.txt).

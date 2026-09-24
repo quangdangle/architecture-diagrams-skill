@@ -1,0 +1,374 @@
+{
+  "title": "Edge-AI SoC: block diagram, boot sequence and address map",
+  "subtitle": "A hardware block diagram with a guided boot walkthrough, plus the address map.",
+  "lang": "en",
+  "diagrams": [
+    {
+      "id": "blocks",
+      "title": "Block diagram",
+      "tag": "Hardware",
+      "summary": "Everything talks through one **AXI interconnect**: bus masters sit on top, memories and the APB bridge below it, slow peripherals behind the bridge. Use **Steps** to follow the boot sequence.",
+      "direction": "TB",
+      "groups": [
+        {
+          "id": "masters",
+          "label": "Bus masters",
+          "icon": "🧠",
+          "color": "blue"
+        },
+        {
+          "id": "fabric",
+          "label": "Interconnect",
+          "icon": "🔀",
+          "color": "slate"
+        },
+        {
+          "id": "memory",
+          "label": "Memory",
+          "icon": "💾",
+          "color": "amber"
+        },
+        {
+          "id": "periph",
+          "label": "Peripherals on APB",
+          "icon": "🔌",
+          "color": "teal"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "cpu",
+          "title": "RISC-V CPU cluster",
+          "icon": "🧠",
+          "desc": "Two 64-bit cores with L1 and L2 caches. Runs Linux and the control firmware.",
+          "color": "blue",
+          "group": "masters",
+          "size": "lg"
+        },
+        {
+          "id": "npu",
+          "title": "NPU",
+          "icon": "⚡",
+          "desc": "Neural-network accelerator. Streams weights and activations over AXI.",
+          "color": "violet",
+          "group": "masters",
+          "size": "lg"
+        },
+        {
+          "id": "dma",
+          "title": "DMA engine",
+          "icon": "🔁",
+          "desc": "Moves data between memory and devices so the CPU does not have to.",
+          "color": "blue",
+          "group": "masters"
+        },
+        {
+          "id": "axi",
+          "title": "AXI4 interconnect",
+          "icon": "🔀",
+          "desc": "Routes every read and write from the masters to memories and the APB bridge.",
+          "color": "slate",
+          "group": "fabric",
+          "size": "lg",
+          "ports": {
+            "in": [
+              "s_axi_cpu",
+              "s_axi_npu",
+              "s_axi_dma"
+            ],
+            "out": [
+              "m_axi_rom",
+              "m_axi_sram",
+              "m_axi_ddr",
+              "m_apb"
+            ]
+          }
+        },
+        {
+          "id": "apb",
+          "title": "AXI-to-APB bridge",
+          "icon": "🌉",
+          "desc": "Turns fast AXI transactions into simple APB accesses for slow devices.",
+          "color": "slate",
+          "group": "fabric"
+        },
+        {
+          "id": "rom",
+          "title": "Boot ROM",
+          "icon": "🔒",
+          "desc": "First code after reset. Checks and loads the bootloader.",
+          "color": "amber",
+          "group": "memory",
+          "size": "sm"
+        },
+        {
+          "id": "sram",
+          "title": "On-chip SRAM",
+          "icon": "🧊",
+          "desc": "2 MB low-latency scratchpad for NPU tiles.",
+          "color": "amber",
+          "group": "memory",
+          "size": "sm"
+        },
+        {
+          "id": "ddrc",
+          "title": "LPDDR4 controller",
+          "icon": "💾",
+          "desc": "Controller and PHY for the external DRAM.",
+          "color": "amber",
+          "group": "memory"
+        },
+        {
+          "id": "uart",
+          "title": "UART",
+          "icon": "⌨️",
+          "desc": "Debug console.",
+          "color": "teal",
+          "group": "periph",
+          "size": "sm"
+        },
+        {
+          "id": "qspi",
+          "title": "QSPI controller",
+          "icon": "📀",
+          "desc": "Reads the external boot flash.",
+          "color": "teal",
+          "group": "periph",
+          "size": "sm"
+        },
+        {
+          "id": "gpio",
+          "title": "GPIO",
+          "icon": "🎚️",
+          "desc": "Buttons, LEDs and board signals.",
+          "color": "teal",
+          "group": "periph",
+          "size": "sm"
+        },
+        {
+          "id": "plic",
+          "title": "Interrupt controller",
+          "icon": "🔔",
+          "desc": "Collects device interrupts and signals the CPU.",
+          "color": "teal",
+          "group": "periph",
+          "size": "sm"
+        },
+        {
+          "id": "flash",
+          "title": "QSPI flash",
+          "icon": "🗄️",
+          "desc": "Holds the bootloader and the firmware image.",
+          "color": "slate",
+          "external": true,
+          "size": "sm"
+        },
+        {
+          "id": "dram",
+          "title": "LPDDR4 DRAM",
+          "icon": "🧱",
+          "desc": "Up to 4 GB of main memory on the board.",
+          "color": "slate",
+          "external": true,
+          "size": "sm"
+        }
+      ],
+      "edges": [
+        {
+          "from": "cpu",
+          "to": "axi",
+          "label": "AXI master",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "npu",
+          "to": "axi",
+          "label": "256-bit AXI",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "dma",
+          "to": "axi",
+          "label": "AXI master",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "axi",
+          "to": "rom",
+          "label": "instruction fetch"
+        },
+        {
+          "from": "axi",
+          "to": "sram",
+          "kind": "storage"
+        },
+        {
+          "from": "axi",
+          "to": "ddrc",
+          "label": "128-bit AXI",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "axi",
+          "to": "apb",
+          "label": "slow accesses"
+        },
+        {
+          "from": "apb",
+          "to": "uart"
+        },
+        {
+          "from": "apb",
+          "to": "qspi"
+        },
+        {
+          "from": "apb",
+          "to": "gpio"
+        },
+        {
+          "from": "apb",
+          "to": "plic"
+        },
+        {
+          "from": "qspi",
+          "to": "flash",
+          "label": "QSPI bus"
+        },
+        {
+          "from": "ddrc",
+          "to": "dram",
+          "label": "LPDDR4 pins"
+        },
+        {
+          "from": "plic",
+          "to": "cpu",
+          "label": "IRQ",
+          "kind": "async"
+        }
+      ],
+      "steps": [
+        {
+          "node": "cpu",
+          "text": "Reset is released and the CPU starts fetching instructions."
+        },
+        {
+          "edge": [
+            "axi",
+            "rom"
+          ],
+          "text": "The first instructions come from the Boot ROM through the interconnect."
+        },
+        {
+          "edge": [
+            "qspi",
+            "flash"
+          ],
+          "text": "Boot ROM code reads the bootloader from the external QSPI flash."
+        },
+        {
+          "node": "ddrc",
+          "text": "The bootloader trains the LPDDR4 interface so the DRAM can be used."
+        },
+        {
+          "node": "npu",
+          "text": "Linux starts and hands AI workloads to the NPU, which streams data from DRAM and SRAM."
+        },
+        {
+          "edge": [
+            "plic",
+            "cpu"
+          ],
+          "text": "From then on, devices get the CPU's attention through the interrupt controller."
+        }
+      ],
+      "legend": {
+        "colors": {
+          "blue": "Processors",
+          "violet": "Accelerator",
+          "slate": "Bus and board parts",
+          "amber": "Memory",
+          "teal": "Peripherals"
+        },
+        "edges": {
+          "bus": "AXI bus (read and write)"
+        }
+      }
+    },
+    {
+      "id": "memory",
+      "type": "memory",
+      "title": "Address map",
+      "tag": "Memory map",
+      "summary": "Where each block lives in the 32-bit address space. Unmapped holes are hatched; any access there returns a bus error.",
+      "regions": [
+        {
+          "name": "Boot ROM",
+          "base": "0x0000_0000",
+          "size": "64KB",
+          "desc": "Read-only, first code after reset.",
+          "color": "amber"
+        },
+        {
+          "name": "On-chip SRAM",
+          "base": "0x1000_0000",
+          "size": "2MB",
+          "desc": "Scratchpad for NPU tiles.",
+          "color": "amber"
+        },
+        {
+          "name": "UART0",
+          "base": "0x4000_0000",
+          "size": "4KB",
+          "desc": "Debug console registers.",
+          "color": "teal"
+        },
+        {
+          "name": "QSPI",
+          "base": "0x4000_1000",
+          "size": "4KB",
+          "desc": "Boot flash controller.",
+          "color": "teal"
+        },
+        {
+          "name": "GPIO",
+          "base": "0x4000_2000",
+          "size": "4KB",
+          "color": "teal"
+        },
+        {
+          "name": "Interrupt controller",
+          "base": "0x4800_0000",
+          "size": "64MB",
+          "desc": "PLIC priority, pending and claim registers.",
+          "color": "teal"
+        },
+        {
+          "name": "NPU registers",
+          "base": "0x5000_0000",
+          "size": "4KB",
+          "desc": "Job queue and status.",
+          "color": "violet"
+        },
+        {
+          "name": "LPDDR4 DRAM",
+          "base": "0x8000_0000",
+          "size": "2GB",
+          "desc": "Main memory.",
+          "color": "blue"
+        }
+      ],
+      "legend": {
+        "colors": {
+          "amber": "On-chip memory",
+          "teal": "Peripherals",
+          "violet": "Accelerator",
+          "blue": "External DRAM"
+        }
+      }
+    }
+  ]
+}

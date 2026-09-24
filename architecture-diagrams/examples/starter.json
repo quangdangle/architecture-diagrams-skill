@@ -1,0 +1,32 @@
+{
+  "title": "Website upload flow",
+  "lang": "en",
+  "summary": "A user uploads a photo; the API stores it and a background worker makes thumbnails. Follow the **numbered steps** on the right.",
+  "direction": "LR",
+  "groups": [
+    { "id": "backend", "label": "Backend", "icon": "⚙️", "color": "teal" }
+  ],
+  "nodes": [
+    { "id": "browser", "title": "Browser", "icon": "🌐", "desc": "The user picks a photo and presses Upload.", "color": "blue", "size": "lg" },
+    { "id": "api", "title": "Upload API", "icon": "🚪", "desc": "Checks the file and saves the original.", "color": "teal", "group": "backend", "size": "lg" },
+    { "id": "queue", "title": "Job queue", "icon": "📨", "desc": "Holds work to do later.", "color": "slate", "group": "backend", "size": "sm" },
+    { "id": "worker", "title": "Thumbnail worker", "icon": "🖼️", "desc": "Makes small preview images.", "color": "teal", "group": "backend" },
+    { "id": "storage", "title": "Object storage", "icon": "🗄️", "desc": "Keeps originals and thumbnails.", "color": "slate", "external": true }
+  ],
+  "edges": [
+    { "from": "browser", "to": "api", "label": "photo file", "kind": "main" },
+    { "from": "api", "to": "storage", "label": "original", "kind": "storage" },
+    { "from": "api", "to": "queue", "label": "resize job", "kind": "async" },
+    { "from": "queue", "to": "worker", "kind": "async" },
+    { "from": "worker", "to": "storage", "label": "thumbnails", "kind": "storage" }
+  ],
+  "steps": [
+    { "node": "browser", "text": "The user chooses a photo and uploads it." },
+    { "edge": ["api", "storage"], "text": "The API saves the original file right away." },
+    { "edge": ["api", "queue"], "text": "It then drops a resize job on the queue, so the user does not wait." },
+    { "node": "worker", "text": "A worker picks up the job and writes thumbnails back to storage." }
+  ],
+  "legend": {
+    "colors": { "blue": "Client", "teal": "Our services", "slate": "Infrastructure" }
+  }
+}

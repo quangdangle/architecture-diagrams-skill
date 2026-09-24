@@ -1,0 +1,61 @@
+{
+  "title": "Online shop: how an order flows",
+  "subtitle": "A software architecture drawn with icon blocks instead of cards.",
+  "lang": "en",
+  "diagrams": [
+    {
+      "id": "system",
+      "title": "System overview",
+      "tag": "Architecture",
+      "summary": "Customers reach the **API gateway** through the CDN and the load balancer. The **order service** writes to **PostgreSQL** and publishes an event; the **fulfilment worker** picks it up from the queue and emails the customer. Use **Steps** to follow one order.",
+      "direction": "LR",
+      "groups": [
+        { "id": "clients", "label": "Clients", "icon": "users", "color": "slate" },
+        { "id": "edge", "label": "Edge", "icon": "globe", "color": "teal" },
+        { "id": "services", "label": "Services", "icon": "boxes", "color": "blue" },
+        { "id": "data", "label": "Data", "icon": "database", "color": "amber" }
+      ],
+      "nodes": [
+        { "id": "user", "title": "Customer", "shape": "user", "group": "clients" },
+        { "id": "web", "title": "Web shop", "shape": "browser", "group": "clients", "color": "slate" },
+        { "id": "app", "title": "Mobile app", "shape": "icon", "icon": "smartphone", "group": "clients" },
+        { "id": "cdn", "title": "CDN", "shape": "cloud", "group": "edge", "color": "teal" },
+        { "id": "lb", "title": "Load balancer", "shape": "icon", "icon": "network", "group": "edge" },
+        { "id": "api", "title": "API gateway", "shape": "api", "group": "services", "color": "blue" },
+        { "id": "auth", "title": "Auth service", "shape": "icon", "icon": "shield-check", "group": "services" },
+        { "id": "orders", "title": "Order service", "shape": "server", "group": "services" },
+        { "id": "queue", "title": "Order events", "shape": "queue", "group": "services", "color": "violet" },
+        { "id": "worker", "title": "Fulfilment worker", "shape": "gear", "group": "services" },
+        { "id": "db", "title": "PostgreSQL", "shape": "database", "group": "data", "color": "amber" },
+        { "id": "cache", "title": "Redis cache", "shape": "icon", "icon": "memory", "group": "data" },
+        { "id": "mail", "title": "Email provider", "shape": "message", "external": true }
+      ],
+      "edges": [
+        { "from": "user", "to": "web" },
+        { "from": "user", "to": "app" },
+        { "from": "web", "to": "cdn", "label": "HTTPS", "kind": "main" },
+        { "from": "app", "to": "lb", "label": "HTTPS" },
+        { "from": "cdn", "to": "lb", "kind": "main" },
+        { "from": "lb", "to": "api", "kind": "main" },
+        { "from": "api", "to": "auth", "label": "check token" },
+        { "from": "api", "to": "orders", "label": "place order", "kind": "main" },
+        { "from": "orders", "to": "db", "label": "save", "kind": "storage" },
+        { "from": "orders", "to": "cache", "kind": "storage" },
+        { "from": "orders", "to": "queue", "label": "order placed", "kind": "async" },
+        { "from": "queue", "to": "worker", "kind": "async" },
+        { "from": "worker", "to": "mail", "label": "confirmation" }
+      ],
+      "steps": [
+        { "node": "user", "text": "The customer checks out in the web shop or the app." },
+        { "edge": ["lb", "api"], "text": "Every request passes the load balancer before it reaches the API gateway." },
+        { "edge": ["api", "orders"], "text": "After the token check, the gateway hands the order to the order service." },
+        { "edge": ["orders", "queue"], "text": "The order service saves the order and publishes an event instead of waiting for fulfilment." },
+        { "node": "worker", "text": "The worker picks up the event, prepares the shipment and asks the email provider to confirm." }
+      ],
+      "legend": {
+        "colors": { "blue": "Services", "amber": "Data stores", "teal": "Network edge", "violet": "Messaging" },
+        "edges": { "main": "Request path", "async": "Event", "storage": "Read or write" }
+      }
+    }
+  ]
+}

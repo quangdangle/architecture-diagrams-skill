@@ -1,0 +1,27 @@
+{
+  "title": "Multi-select fixture",
+  "lang": "vi",
+  "diagrams": [
+    {
+      "id": "m",
+      "title": "Chọn nhiều khối",
+      "layout": "manual",
+      "groups": [
+        { "id": "left", "label": "Left" },
+        { "id": "right", "label": "Right" }
+      ],
+      "nodes": [
+        { "id": "a", "title": "A", "x": 40, "y": 60, "group": "left" },
+        { "id": "b", "title": "B", "x": 40, "y": 200, "group": "left" },
+        { "id": "c", "title": "C", "x": 560, "y": 60, "group": "right" },
+        { "id": "d", "title": "D", "x": 560, "y": 260, "group": "right" },
+        { "id": "e", "title": "E", "x": 300, "y": 460 }
+      ],
+      "edges": [
+        { "from": "a", "to": "b" },
+        { "from": "c", "to": "d" },
+        { "from": "b", "to": "e", "label": "old" }
+      ]
+    }
+  ]
+}

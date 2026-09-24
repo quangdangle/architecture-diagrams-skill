@@ -1,0 +1,89 @@
+{
+  "title": "DEMO-M0 microcontroller: datasheet figures",
+  "subtitle": "A made-up microcontroller drawn the way datasheets draw chips: a block diagram with buses and power domains, and the package pinout.",
+  "lang": "en",
+  "diagrams": [
+    {
+      "id": "blocks",
+      "type": "chip",
+      "title": "Block diagram",
+      "tag": "Datasheet style",
+      "summary": "Blocks hang off two buses: the **bus matrix** for fast masters and memories, and **APB** for slow peripherals. Shaded areas show which **power domain** feeds each block; pins sit on the chip outline.",
+      "chip": "DEMO-M0",
+      "domains": [
+        { "id": "vbat", "label": "VBAT", "color": "green" },
+        { "id": "vdd", "label": "VDD", "color": "slate" },
+        { "id": "vdda", "label": "VDDA", "color": "violet" },
+        { "id": "vddio", "label": "VDDIO", "color": "amber" }
+      ],
+      "columns": [
+        { "blocks": [
+          { "id": "swd", "title": "SWD", "sub": "Serial wire debug", "pins": ["SWCLK", "SWDIO"] },
+          { "id": "cpu", "title": "CPU", "sub": "32-bit core, 64 MHz", "rows": 3, "color": "blue" },
+          { "id": "gpio", "title": "GPIO ports A–D", "sub": "54 I/O pins", "rows": 2, "domain": "vddio", "pins": ["PA[15:0]", "PB[15:0]", "PC[15:0]", "PD[3:0]"] },
+          { "id": "exti", "title": "EXTI", "sub": "External interrupts" }
+        ] },
+        { "bus": "Bus matrix", "style": "matrix" },
+        { "blocks": [
+          { "id": "dma", "title": "DMA", "sub": "7 channels" },
+          { "id": "flash", "title": "Flash memory", "sub": "256 KB" },
+          { "id": "sram", "title": "SRAM", "sub": "64 KB with parity" },
+          { "id": "crc", "title": "CRC" },
+          { "id": "rcc", "title": "RCC", "sub": "Reset and clock control", "rows": 2, "domain": "vdd" },
+          { "id": "bridge", "title": "AHB-to-APB bridge", "link": "both" }
+        ] },
+        { "bus": "APB" },
+        { "blocks": [
+          { "id": "tim1", "title": "TIM1", "sub": "Advanced timer", "pins": ["CH1..4", "BKIN"] },
+          { "id": "tim23", "title": "TIM2 & 3", "sub": "General timers", "multi": 2, "pins": ["CH1..4", "ETR"] },
+          { "id": "usart", "title": "USART1 & 2", "multi": 2, "pins": ["TX, RX", "CTS, RTS"] },
+          { "id": "spi", "title": "SPI1", "pins": ["SCK, MISO", "MOSI, NSS"] },
+          { "id": "i2c", "title": "I2C1", "pins": ["SCL, SDA"] },
+          { "id": "adc", "title": "ADC", "sub": "12-bit, 1 Msps", "domain": "vdda", "pins": ["16 × IN"], "pinDir": "in" },
+          { "id": "rtc", "title": "RTC", "sub": "Backup registers", "domain": "vbat", "pins": ["OSC32_IN", "OSC32_OUT"] },
+          { "id": "wdg", "title": "Watchdogs", "sub": "IWDG, WWDG" }
+        ] }
+      ],
+      "links": [
+        { "from": "exti", "to": "cpu", "label": "IRQ" }
+      ]
+    },
+    {
+      "id": "pinout",
+      "type": "pinout",
+      "title": "Pinout",
+      "tag": "LQFP48",
+      "summary": "Package LQFP48, seen from the top. Pin 1 is marked by the dot; numbering runs counter-clockwise. Shaded pins are power, ground, reset, debug or boot configuration.",
+      "chip": "DEMO-M0",
+      "package": "LQFP48",
+      "pins": [
+        "VBAT", "PC13", "PC14-OSC32_IN", "PC15-OSC32_OUT", "PF0-OSC_IN", "PF1-OSC_OUT", "NRST", "VSSA", "VDDA",
+        { "n": 10, "name": "PA0", "alt": ["ADC_IN0", "WKUP1"] },
+        { "n": 11, "name": "PA1", "alt": ["ADC_IN1"] },
+        { "n": 12, "name": "PA2", "alt": ["USART2_TX", "ADC_IN2"] },
+        { "n": 13, "name": "PA3", "alt": ["USART2_RX", "ADC_IN3"] },
+        { "n": 14, "name": "PA4", "alt": ["SPI1_NSS", "ADC_IN4"] },
+        { "n": 15, "name": "PA5", "alt": ["SPI1_SCK", "ADC_IN5"] },
+        { "n": 16, "name": "PA6", "alt": ["SPI1_MISO"] },
+        { "n": 17, "name": "PA7", "alt": ["SPI1_MOSI"] },
+        { "n": 18, "name": "PB0" }, { "n": 19, "name": "PB1" }, { "n": 20, "name": "PB2" },
+        { "n": 21, "name": "PB10" }, { "n": 22, "name": "PB11" },
+        { "n": 23, "name": "VSS" }, { "n": 24, "name": "VDD" },
+        { "n": 25, "name": "PB12" }, { "n": 26, "name": "PB13" }, { "n": 27, "name": "PB14" }, { "n": 28, "name": "PB15" },
+        { "n": 29, "name": "PA8", "alt": ["TIM1_CH1"] },
+        { "n": 30, "name": "PA9", "alt": ["USART1_TX", "TIM1_CH2"] },
+        { "n": 31, "name": "PA10", "alt": ["USART1_RX", "TIM1_CH3"] },
+        { "n": 32, "name": "PA11" }, { "n": 33, "name": "PA12" },
+        { "n": 34, "name": "PA13-SWDIO", "type": "debug" },
+        { "n": 35, "name": "VSS" }, { "n": 36, "name": "VDDIO2" },
+        { "n": 37, "name": "PA14-SWCLK", "type": "debug" },
+        { "n": 38, "name": "PA15" }, { "n": 39, "name": "PB3" }, { "n": 40, "name": "PB4" }, { "n": 41, "name": "PB5" },
+        { "n": 42, "name": "PB6", "alt": ["I2C1_SCL"] },
+        { "n": 43, "name": "PB7", "alt": ["I2C1_SDA"] },
+        { "n": 44, "name": "BOOT0", "type": "config", "desc": "Selects the boot source at reset." },
+        { "n": 45, "name": "PB8" }, { "n": 46, "name": "PB9" },
+        { "n": 47, "name": "VSS" }, { "n": 48, "name": "VDD" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,710 @@
+{
+  "title": "IP UART: tài liệu thiết kế",
+  "subtitle": "Ví dụ trọn bộ cho một IP vi mạch: sơ đồ khối, máy trạng thái, giản đồ thời gian và thanh ghi.",
+  "lang": "vi",
+  "diagrams": [
+    {
+      "id": "block",
+      "title": "Sơ đồ khối",
+      "tag": "Kiến trúc",
+      "summary": "IP có hai **miền clock**: phần giao tiếp APB và thanh ghi chạy theo PCLK, phần phát và thu chạy theo UART_CLK. Hai **FIFO bất đồng bộ** ở giữa đưa dữ liệu qua ranh giới clock an toàn.",
+      "direction": "TB",
+      "groups": [
+        {
+          "id": "pclk",
+          "label": "Miền PCLK",
+          "icon": "🔷",
+          "color": "blue"
+        },
+        {
+          "id": "cdc",
+          "label": "Vượt miền clock",
+          "icon": "🔀",
+          "color": "amber"
+        },
+        {
+          "id": "uclk",
+          "label": "Miền UART_CLK",
+          "icon": "🔶",
+          "color": "teal"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "apb",
+          "title": "Giao tiếp APB",
+          "icon": "🔌",
+          "desc": "Nhận lệnh đọc ghi thanh ghi từ bus APB.",
+          "color": "blue",
+          "group": "pclk",
+          "size": "lg",
+          "ports": {
+            "in": [
+              "PCLK",
+              "PRESETn",
+              "PSEL",
+              "PENABLE",
+              "PWRITE",
+              "PADDR[11:0]",
+              "PWDATA[31:0]"
+            ],
+            "out": [
+              "PRDATA[31:0]",
+              "PREADY",
+              "PSLVERR"
+            ]
+          }
+        },
+        {
+          "id": "regs",
+          "title": "Khối thanh ghi",
+          "icon": "🗂️",
+          "desc": "CTRL, STATUS, BAUD, DATA và IRQ_STATUS.",
+          "color": "blue",
+          "group": "pclk"
+        },
+        {
+          "id": "irq",
+          "title": "Logic ngắt",
+          "icon": "🔔",
+          "desc": "Gộp các nguồn ngắt thành một tín hiệu.",
+          "color": "blue",
+          "group": "pclk",
+          "size": "sm",
+          "ports": {
+            "out": [
+              "irq"
+            ]
+          }
+        },
+        {
+          "id": "txfifo",
+          "title": "TX FIFO bất đồng bộ",
+          "icon": "📥",
+          "desc": "16 byte, đưa dữ liệu từ PCLK sang UART_CLK.",
+          "color": "amber",
+          "group": "cdc"
+        },
+        {
+          "id": "rxfifo",
+          "title": "RX FIFO bất đồng bộ",
+          "icon": "📤",
+          "desc": "16 byte, đưa dữ liệu theo chiều ngược lại.",
+          "color": "amber",
+          "group": "cdc"
+        },
+        {
+          "id": "baud",
+          "title": "Bộ tạo baud",
+          "icon": "⏱️",
+          "desc": "Chia UART_CLK theo giá trị BAUD để tạo nhịp 16x.",
+          "color": "teal",
+          "group": "uclk",
+          "size": "sm",
+          "ports": {
+            "in": [
+              "uart_clk",
+              "div[15:0]"
+            ],
+            "out": [
+              "tick_16x"
+            ]
+          }
+        },
+        {
+          "id": "tx",
+          "title": "Bộ phát TX",
+          "icon": "➡️",
+          "desc": "Thêm start, parity, stop rồi dịch ra từng bit.",
+          "color": "teal",
+          "group": "uclk",
+          "ports": {
+            "out": [
+              "txd"
+            ]
+          }
+        },
+        {
+          "id": "rx",
+          "title": "Bộ thu RX",
+          "icon": "⬅️",
+          "desc": "Lấy mẫu 16 lần mỗi bit rồi ghép lại thành byte.",
+          "color": "teal",
+          "group": "uclk",
+          "ports": {
+            "in": [
+              "rxd"
+            ]
+          }
+        },
+        {
+          "id": "pins",
+          "title": "Chân UART",
+          "icon": "📌",
+          "desc": "txd và rxd nối ra ngoài chip.",
+          "color": "slate",
+          "external": true,
+          "size": "sm"
+        }
+      ],
+      "edges": [
+        {
+          "from": "apb",
+          "to": "regs",
+          "label": "APB",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "regs",
+          "to": "txfifo",
+          "label": "byte cần gửi",
+          "kind": "main"
+        },
+        {
+          "from": "regs",
+          "to": "rxfifo",
+          "label": "đọc DATA",
+          "kind": "main",
+          "dir": "back"
+        },
+        {
+          "from": "regs",
+          "to": "baud",
+          "label": "div"
+        },
+        {
+          "from": "regs",
+          "to": "irq",
+          "label": "cờ trạng thái",
+          "kind": "async"
+        },
+        {
+          "from": "txfifo",
+          "to": "tx",
+          "label": "byte",
+          "kind": "main"
+        },
+        {
+          "from": "rxfifo",
+          "to": "rx",
+          "label": "byte nhận",
+          "kind": "main",
+          "dir": "back"
+        },
+        {
+          "from": "baud",
+          "to": "tx",
+          "label": "tick_16x",
+          "kind": "clock"
+        },
+        {
+          "from": "baud",
+          "to": "rx",
+          "label": "tick_16x",
+          "kind": "clock"
+        },
+        {
+          "from": "tx",
+          "to": "pins",
+          "label": "txd"
+        },
+        {
+          "from": "rx",
+          "to": "pins",
+          "label": "rxd",
+          "dir": "back"
+        }
+      ],
+      "steps": [
+        {
+          "node": "apb",
+          "text": "CPU ghi một byte vào thanh ghi DATA qua bus APB."
+        },
+        {
+          "node": "txfifo",
+          "text": "Byte đi qua TX FIFO bất đồng bộ để sang miền UART_CLK an toàn."
+        },
+        {
+          "node": "tx",
+          "text": "Bộ phát thêm start bit, parity, stop bit rồi đẩy ra chân txd theo nhịp baud."
+        },
+        {
+          "node": "rx",
+          "text": "Ở chiều nhận, bộ thu lấy mẫu rxd 16 lần mỗi bit để chống nhiễu, rồi đưa byte vào RX FIFO."
+        },
+        {
+          "node": "irq",
+          "text": "Khi có byte mới hoặc có lỗi, logic ngắt bật irq để báo cho CPU."
+        }
+      ],
+      "legend": {
+        "colors": {
+          "blue": "Miền PCLK",
+          "amber": "Vượt miền clock",
+          "teal": "Miền UART_CLK",
+          "slate": "Bên ngoài chip"
+        }
+      }
+    },
+    {
+      "id": "rx-fsm",
+      "title": "Máy trạng thái RX",
+      "tag": "FSM",
+      "summary": "Bộ thu đi qua các trạng thái theo từng bit của khung. Mũi tên đỏ là lỗi, mũi tên xanh là nhận thành công, nét đứt cam là quay về chờ khung mới.",
+      "direction": "TB",
+      "nodes": [
+        {
+          "id": "idle",
+          "title": "IDLE",
+          "desc": "Chờ rxd xuống 0",
+          "color": "slate",
+          "shape": "state",
+          "initial": true
+        },
+        {
+          "id": "start",
+          "title": "START",
+          "desc": "Kiểm tra giữa start bit",
+          "color": "blue",
+          "shape": "state"
+        },
+        {
+          "id": "data",
+          "title": "DATA",
+          "desc": "Lấy 8 bit dữ liệu",
+          "color": "blue",
+          "shape": "state"
+        },
+        {
+          "id": "parity",
+          "title": "PARITY",
+          "desc": "Kiểm tra bit chẵn lẻ",
+          "color": "blue",
+          "shape": "state"
+        },
+        {
+          "id": "stop",
+          "title": "STOP",
+          "desc": "Kiểm tra stop bit",
+          "color": "blue",
+          "shape": "state"
+        },
+        {
+          "id": "done",
+          "title": "PUSH",
+          "desc": "Đẩy byte vào RX FIFO",
+          "color": "green",
+          "shape": "state",
+          "final": true
+        },
+        {
+          "id": "err",
+          "title": "FRAME_ERR",
+          "desc": "Bật cờ lỗi, bỏ byte",
+          "color": "red",
+          "shape": "state"
+        }
+      ],
+      "edges": [
+        {
+          "from": "idle",
+          "to": "start",
+          "label": "rxd = 0"
+        },
+        {
+          "from": "start",
+          "to": "idle",
+          "label": "rxd = 1, nhiễu",
+          "kind": "fail"
+        },
+        {
+          "from": "start",
+          "to": "data",
+          "label": "giữa start bit"
+        },
+        {
+          "from": "data",
+          "to": "data",
+          "label": "bit_cnt < 7"
+        },
+        {
+          "from": "data",
+          "to": "parity",
+          "label": "đủ 8 bit, có parity"
+        },
+        {
+          "from": "data",
+          "to": "stop",
+          "label": "đủ 8 bit, không parity"
+        },
+        {
+          "from": "parity",
+          "to": "stop",
+          "label": "parity đúng",
+          "kind": "ok"
+        },
+        {
+          "from": "parity",
+          "to": "err",
+          "label": "parity sai",
+          "kind": "fail"
+        },
+        {
+          "from": "stop",
+          "to": "done",
+          "label": "stop = 1",
+          "kind": "ok"
+        },
+        {
+          "from": "stop",
+          "to": "err",
+          "label": "stop = 0",
+          "kind": "fail"
+        },
+        {
+          "from": "done",
+          "to": "idle",
+          "kind": "feedback"
+        },
+        {
+          "from": "err",
+          "to": "idle",
+          "label": "chờ rxd = 1",
+          "kind": "feedback"
+        }
+      ],
+      "steps": [
+        {
+          "edge": [
+            "idle",
+            "start"
+          ],
+          "text": "Khi rxd xuống 0, bộ thu nghi là có start bit và chuyển sang START."
+        },
+        {
+          "node": "start",
+          "text": "Bộ thu kiểm tra lại ở giữa start bit; nếu rxd đã lên 1 thì đó chỉ là nhiễu."
+        },
+        {
+          "node": "data",
+          "text": "Ở trạng thái DATA, mỗi bit được lấy mẫu một lần ở giữa bit, lặp lại 8 lần."
+        },
+        {
+          "node": "err",
+          "text": "Parity sai hoặc stop bit bằng 0 thì bật cờ lỗi và bỏ byte."
+        }
+      ],
+      "legend": {
+        "colors": {
+          "blue": "Đang nhận",
+          "green": "Kết thúc tốt",
+          "red": "Lỗi",
+          "slate": "Chờ"
+        }
+      }
+    },
+    {
+      "id": "apb-timing",
+      "type": "wave",
+      "title": "Giản đồ APB",
+      "tag": "Timing",
+      "summary": "Một lần **ghi** DATA có một chu kỳ chờ do PREADY xuống thấp, sau đó một lần **đọc** STATUS không chờ. Dữ liệu viết theo định dạng WaveJSON của WaveDrom.",
+      "wave": {
+        "signal": [
+          {
+            "name": "PCLK",
+            "wave": "p......."
+          },
+          [
+            "Điều khiển",
+            {
+              "name": "PSEL",
+              "wave": "01..01.0"
+            },
+            {
+              "name": "PENABLE",
+              "wave": "0.1.0.10",
+              "node": "..a....."
+            },
+            {
+              "name": "PWRITE",
+              "wave": "x1..x0.x"
+            },
+            {
+              "name": "PREADY",
+              "wave": "x.01x.1x",
+              "node": "...b...."
+            }
+          ],
+          [
+            "Dữ liệu",
+            {
+              "name": "PADDR",
+              "wave": "x3..x4.x",
+              "data": [
+                "0x00C DATA",
+                "0x004 STATUS"
+              ]
+            },
+            {
+              "name": "PWDATA",
+              "wave": "x5..x...",
+              "data": [
+                "0x41"
+              ]
+            },
+            {
+              "name": "PRDATA",
+              "wave": "x.....6x",
+              "data": [
+                "0x06"
+              ]
+            }
+          ]
+        ],
+        "edge": [
+          "a~>b PREADY = 0 thêm 1 chu kỳ chờ"
+        ],
+        "head": {
+          "text": "APB: ghi DATA rồi đọc STATUS",
+          "tick": 0
+        },
+        "config": {
+          "hscale": 2
+        }
+      }
+    },
+    {
+      "id": "uart-frame",
+      "type": "wave",
+      "title": "Khung UART",
+      "tag": "Timing",
+      "summary": "Khung 8N1: một start bit bằng 0, tám bit dữ liệu từ bit thấp đến bit cao, một stop bit bằng 1. Bộ thu lấy mẫu ở giữa mỗi bit.",
+      "wave": {
+        "signal": [
+          {
+            "name": "txd",
+            "wave": "10========1.",
+            "data": [
+              "D0",
+              "D1",
+              "D2",
+              "D3",
+              "D4",
+              "D5",
+              "D6",
+              "D7"
+            ],
+            "node": ".a"
+          },
+          {
+            "name": "mẫu RX",
+            "wave": "0..hlhlhlhlhlhlhlhlhlhl0",
+            "period": 0.5,
+            "node": "...b"
+          },
+          {
+            "name": "bit",
+            "wave": "x2========2x",
+            "data": [
+              "start",
+              "0",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6",
+              "7",
+              "stop"
+            ]
+          },
+          {
+            "name": "tx_busy",
+            "wave": "01.........0"
+          }
+        ],
+        "edge": [
+          "a~>b lấy mẫu giữa start bit"
+        ],
+        "head": {
+          "text": "Khung 8N1, mỗi cột là một bit",
+          "tick": 0
+        }
+      }
+    },
+    {
+      "id": "registers",
+      "type": "register",
+      "title": "Thanh ghi",
+      "tag": "Register map",
+      "summary": "Bản đồ thanh ghi của IP, mỗi thanh ghi rộng 32 bit. Các bit không liệt kê là **dự trữ**: đọc ra 0, ghi vào không có tác dụng.",
+      "registers": [
+        {
+          "name": "CTRL",
+          "offset": "0x000",
+          "width": 32,
+          "desc": "Điều khiển chung.",
+          "fields": [
+            {
+              "bits": "15:8",
+              "name": "RXTHR",
+              "access": "RW",
+              "reset": "0x01",
+              "desc": "Ngưỡng số byte trong RX FIFO để báo ngắt."
+            },
+            {
+              "bits": 5,
+              "name": "STOP2",
+              "access": "RW",
+              "reset": "0",
+              "desc": "1: dùng 2 stop bit."
+            },
+            {
+              "bits": "4:3",
+              "name": "PARITY",
+              "access": "RW",
+              "reset": "0",
+              "desc": "0: không, 1: lẻ, 2: chẵn."
+            },
+            {
+              "bits": 2,
+              "name": "RXIE",
+              "access": "RW",
+              "reset": "0",
+              "desc": "Cho phép ngắt khi có byte mới."
+            },
+            {
+              "bits": 1,
+              "name": "TXIE",
+              "access": "RW",
+              "reset": "0",
+              "desc": "Cho phép ngắt khi TX FIFO trống."
+            },
+            {
+              "bits": 0,
+              "name": "EN",
+              "access": "RW",
+              "reset": "0",
+              "desc": "Bật UART."
+            }
+          ]
+        },
+        {
+          "name": "STATUS",
+          "offset": "0x004",
+          "width": 32,
+          "desc": "Trạng thái FIFO và cờ lỗi.",
+          "fields": [
+            {
+              "bits": "12:8",
+              "name": "RXCNT",
+              "access": "RO",
+              "reset": "0",
+              "desc": "Số byte đang có trong RX FIFO."
+            },
+            {
+              "bits": 5,
+              "name": "PERR",
+              "access": "W1C",
+              "reset": "0",
+              "desc": "Lỗi parity, ghi 1 để xóa."
+            },
+            {
+              "bits": 4,
+              "name": "FERR",
+              "access": "W1C",
+              "reset": "0",
+              "desc": "Lỗi khung, ghi 1 để xóa."
+            },
+            {
+              "bits": 3,
+              "name": "RXOVF",
+              "access": "W1C",
+              "reset": "0",
+              "desc": "Tràn RX FIFO, ghi 1 để xóa."
+            },
+            {
+              "bits": 2,
+              "name": "RXEMPTY",
+              "access": "RO",
+              "reset": "1",
+              "desc": "RX FIFO rỗng."
+            },
+            {
+              "bits": 1,
+              "name": "TXEMPTY",
+              "access": "RO",
+              "reset": "1",
+              "desc": "TX FIFO rỗng."
+            },
+            {
+              "bits": 0,
+              "name": "TXFULL",
+              "access": "RO",
+              "reset": "0",
+              "desc": "TX FIFO đầy."
+            }
+          ]
+        },
+        {
+          "name": "BAUD",
+          "offset": "0x008",
+          "width": 32,
+          "desc": "Hệ số chia tốc độ baud.",
+          "fields": [
+            {
+              "bits": "15:0",
+              "name": "DIV",
+              "access": "RW",
+              "reset": "0x0036",
+              "desc": "UART_CLK / (16 × baud) − 1."
+            }
+          ]
+        },
+        {
+          "name": "DATA",
+          "offset": "0x00C",
+          "width": 32,
+          "desc": "Ghi để gửi một byte, đọc để lấy một byte đã nhận.",
+          "fields": [
+            {
+              "bits": "7:0",
+              "name": "DATA",
+              "access": "RW",
+              "reset": "0x00",
+              "desc": "Byte dữ liệu."
+            }
+          ]
+        },
+        {
+          "name": "IRQ_STATUS",
+          "offset": "0x010",
+          "width": 32,
+          "desc": "Ví dụ viết theo định dạng reg của WaveDrom (liệt kê từ bit thấp).",
+          "reg": [
+            {
+              "bits": 1,
+              "name": "TXI",
+              "attr": "W1C"
+            },
+            {
+              "bits": 1,
+              "name": "RXI",
+              "attr": "W1C"
+            },
+            {
+              "bits": 1,
+              "name": "ERRI",
+              "attr": "W1C"
+            },
+            {
+              "bits": 29
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

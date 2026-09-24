@@ -1,0 +1,7 @@
+{"title": "Manipulation test", "lang": "vi", "diagrams": [{"id": "m", "title": "Gates", "layout": "manual", "route": "orthogonal", "nodes": [
+ {"id": "a", "title": "A", "shape": "box", "x": 40, "y": 60, "w": 100, "h": 50},
+ {"id": "g1", "title": "U1", "shape": "and", "x": 260, "y": 60},
+ {"id": "g2", "title": "U2", "shape": "or", "x": 260, "y": 200, "w": 200, "h": 44},
+ {"id": "ff", "title": "q_reg", "shape": "dff", "x": 460, "y": 40},
+ {"id": "db", "title": "DB", "shape": "icon", "icon": "database", "x": 60, "y": 220}],
+ "edges": [{"from": "a", "to": "g1"}, {"from": "g1", "to": "ff"}, {"from": "g2", "to": "ff", "toAnchor": [0, 0.72]}]}]}

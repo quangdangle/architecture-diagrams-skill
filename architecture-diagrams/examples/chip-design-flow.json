@@ -1,0 +1,49 @@
+{
+  "title": "Quy trình thiết kế chip số: từ đặc tả đến tape-out",
+  "subtitle": "Ví dụ sơ đồ quy trình có các vòng quay lại để sửa lỗi.",
+  "lang": "vi",
+  "direction": "TB",
+  "summary": "Sơ đồ đọc từ trên xuống dưới. **Front-end** biến ý tưởng thành RTL đúng chức năng, **back-end** biến RTL thành layout, **signoff** xác nhận layout đủ điều kiện đem đi sản xuất. Mũi tên nét đứt màu cam là các vòng quay lại để sửa lỗi.",
+  "groups": [
+    { "id": "fe", "label": "Front-end", "icon": "💡", "color": "blue" },
+    { "id": "be", "label": "Back-end", "icon": "🧩", "color": "teal" },
+    { "id": "so", "label": "Signoff", "icon": "✅", "color": "green" }
+  ],
+  "nodes": [
+    { "id": "spec", "title": "Đặc tả", "icon": "📝", "desc": "Chốt chức năng, hiệu năng, công suất và diện tích mục tiêu.", "color": "blue", "group": "fe" },
+    { "id": "rtl", "title": "Viết RTL", "icon": "💻", "desc": "Mô tả phần cứng bằng Verilog hoặc SystemVerilog.", "color": "blue", "group": "fe", "size": "lg" },
+    { "id": "verif", "title": "Kiểm chứng chức năng", "icon": "🧪", "desc": "Mô phỏng, chạy UVM và đo độ phủ để tìm lỗi logic.", "color": "blue", "group": "fe", "size": "lg" },
+    { "id": "synth", "title": "Tổng hợp logic", "icon": "⚙️", "desc": "Chuyển RTL thành netlist cổng logic theo thư viện của xưởng.", "color": "teal", "group": "be" },
+    { "id": "pnr", "title": "Đặt và đi dây", "icon": "🗺️", "desc": "Sắp xếp cell, dựng cây xung nhịp và đi dây trên layout.", "color": "teal", "group": "be", "size": "lg" },
+    { "id": "sta", "title": "Phân tích thời gian", "icon": "⏱️", "desc": "Kiểm tra mọi đường tín hiệu có kịp xung nhịp hay không.", "color": "green", "group": "so" },
+    { "id": "pv", "title": "Kiểm tra vật lý", "icon": "📐", "desc": "DRC và LVS: layout đúng luật thiết kế và khớp với netlist.", "color": "green", "group": "so" },
+    { "id": "gds", "title": "Tape-out", "icon": "🚀", "desc": "Gửi file GDSII cuối cùng cho xưởng đúc.", "color": "green", "size": "lg" },
+    { "id": "fab", "title": "Xưởng đúc", "icon": "🏭", "desc": "Sản xuất wafer theo quy trình công nghệ đã chọn.", "color": "slate", "external": true }
+  ],
+  "edges": [
+    { "from": "spec", "to": "rtl", "label": "đặc tả đã chốt", "kind": "main" },
+    { "from": "rtl", "to": "verif", "label": "mã RTL", "kind": "main" },
+    { "from": "verif", "to": "rtl", "label": "lỗi logic", "kind": "feedback" },
+    { "from": "verif", "to": "synth", "label": "RTL sạch lỗi", "kind": "main" },
+    { "from": "synth", "to": "pnr", "label": "netlist", "kind": "main" },
+    { "from": "pnr", "to": "sta", "label": "layout" },
+    { "from": "pnr", "to": "pv", "label": "layout" },
+    { "from": "sta", "to": "pnr", "label": "vi phạm thời gian", "kind": "feedback" },
+    { "from": "pv", "to": "pnr", "label": "lỗi DRC, LVS", "kind": "feedback" },
+    { "from": "sta", "to": "gds", "label": "đạt", "kind": "ok" },
+    { "from": "pv", "to": "gds", "label": "đạt", "kind": "ok" },
+    { "from": "gds", "to": "fab", "label": "GDSII", "kind": "main" }
+  ],
+  "steps": [
+    { "node": "spec", "text": "Nhóm sản phẩm chốt đặc tả trước khi viết dòng mã đầu tiên." },
+    { "node": "rtl", "text": "Kỹ sư thiết kế viết RTL theo đặc tả và kiến trúc đã chọn." },
+    { "edge": ["verif", "rtl"], "text": "Kiểm chứng tìm ra lỗi thì RTL quay lại để sửa. Đây thường là vòng lặp tốn thời gian nhất của dự án." },
+    { "node": "synth", "text": "Khi RTL đã sạch lỗi, công cụ tổng hợp chuyển RTL thành netlist." },
+    { "node": "pnr", "text": "Nhóm back-end đặt cell, dựng cây xung nhịp và đi dây." },
+    { "edge": ["sta", "pnr"], "text": "Nếu còn vi phạm thời gian hoặc lỗi DRC, LVS thì layout quay lại bước đặt và đi dây." },
+    { "node": "gds", "text": "Khi mọi kiểm tra signoff đều đạt, nhóm dự án gửi file GDSII cho xưởng đúc." }
+  ],
+  "legend": {
+    "colors": { "blue": "Front-end", "teal": "Back-end", "green": "Signoff và tape-out", "slate": "Đối tác bên ngoài" }
+  }
+}
