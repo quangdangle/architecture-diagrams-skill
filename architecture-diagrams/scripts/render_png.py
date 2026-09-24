@@ -116,6 +116,10 @@ def run_browser(browser, profile, width, height, scale, url, out=None, timeout=9
                 time.sleep(0.25)
     finally:
         stop(proc)
+        # the pipe is closed here, once the reader thread has seen its end, so nothing is left open
+        if out is None:
+            reader.join(timeout=2)
+            proc.stdout.close()
     return b"".join(chunks).decode("utf-8", "replace")
 
 

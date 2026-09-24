@@ -85,6 +85,8 @@ function renderSpec(raw, keepTheme) {
         if (e.to !== e.from && st.adj[e.to]) st.adj[e.to].push(k);
       });
       st.L = layoutDiagram(d);
+      /* room to grow while editing a hand-placed drawing (see outW in renderer.js) */
+      if (d.layout === 'manual' && document.body.classList.contains('editing')) { st.L.roomX = 240; st.L.roomY = 140; st.L.width += 240; st.L.height += 140; }
     } else if (d.kind === 'wave') {
       if (!d.rows.length) return;
       st.L = layoutWave(d);
@@ -177,9 +179,10 @@ function boot() {
     var pageBox = document.querySelector('.page').getBoundingClientRect();
     document.documentElement.setAttribute('data-shot-height', String(Math.ceil(pageBox.bottom + window.scrollY)));
     if (params.get('export')) runCliExport(params.get('export'), params.get('diagram'));
+    if (params.get('assist') === '1') runCliAssist();
   }).catch(function (err) {
     showNotice(t('badSpec') + ' ' + (err && err.message ? err.message : err));
-    if (params.get('export')) document.documentElement.setAttribute('data-export', 'error:' + encodeURIComponent(String(err && err.message || err)));
+    if (params.get('export') || params.get('assist')) document.documentElement.setAttribute('data-export', 'error:' + encodeURIComponent(String(err && err.message || err)));
   });
 }
 

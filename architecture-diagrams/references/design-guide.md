@@ -13,6 +13,8 @@ A diagram answers a question. Before writing any JSON, write the question in one
 
 ## 2. Software patterns
 
+Ready-made starting points for most of the layouts in sections 2 and 3 (30 patterns: circuits, SoC and IP, software, flowcharts and state machines) are in `assets/patterns.json`, inserted from the editor's Patterns list or with `assist.py --pattern`.
+
 ### Architecture or service map
 - `TB`, one group per layer (clients, gateway, services, data, outside providers).
 - `lg` for the 2 to 4 services that carry the business logic; datastores and queues as `database` / `queue` shapes or `sm` cards in `slate`.

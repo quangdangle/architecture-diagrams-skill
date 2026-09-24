@@ -231,6 +231,15 @@ var SYMBOLS = {
               tpart('D', w * 0.14, h * 0.3 + 4, 11, 'start'), tpart('Q', w * 0.86, h * 0.3 + 4, 11, 'end'), tpart('Q', w * 0.86, h * 0.78 + 4, 11, 'end'),
               part(np().line(w * 0.86 - 8, h * 0.78 - 6.5, w * 0.86, h * 0.78 - 6.5), 'none', { weight: 0.7 })];
     } },
+  dffr: { cat: 'digital', size: [56, 84], label: 'top', pins: [[0, 0.28, 'D', 'in'], [0, 0.6, 'CLK', 'clk'], [1, 0.28, 'Q', 'out'], [1, 0.6, 'QN', 'out'], [0.5, 1, 'RST_N', 'in']],
+    draw: function (w, h) {
+      /* a flip-flop with an active-low asynchronous reset on the bottom edge */
+      var s = Math.min(8, h * 0.1);
+      return [part(np().rect(0, 0, w, h), 'fill'), part(clockWedge(np(), 0, h * 0.6, s), 'none'),
+              tpart('D', w * 0.14, h * 0.28 + 4, 11, 'start'), tpart('Q', w * 0.86, h * 0.28 + 4, 11, 'end'), tpart('Q', w * 0.86, h * 0.6 + 4, 11, 'end'),
+              part(np().line(w * 0.86 - 8, h * 0.6 - 6.5, w * 0.86, h * 0.6 - 6.5), 'none', { weight: 0.7 }),
+              tpart('R', w * 0.5, h - 6, 10, 'middle'), part(np().line(w * 0.5 - 3.5, h - 15, w * 0.5 + 3.5, h - 15), 'none', { weight: 0.7 })];
+    } },
   latch: { cat: 'digital', size: [56, 72], label: 'bottom', pins: [[0, 0.3, 'D', 'in'], [0, 0.72, 'EN', 'clk'], [1, 0.3, 'Q', 'out']],
     draw: function (w, h) {
       return [part(np().rect(0, 0, w, h), 'fill'), tpart('D', w * 0.12, h * 0.3 + 4, 11, 'start'), tpart('EN', w * 0.12, h * 0.72 + 4, 10, 'start'), tpart('Q', w * 0.88, h * 0.3 + 4, 11, 'end')];
@@ -497,7 +506,7 @@ var SYMBOLS = {
 };
 
 /* Glyph-like symbols keep their proportions when resized; box-like ones may stretch. */
-var FIXED_ASPECT = ['circle', 'actor', 'and', 'nand', 'or', 'nor', 'xor', 'xnor', 'not', 'buffer', 'tristate', 'adder', 'multiplier', 'dff', 'latch', 'sync',
+var FIXED_ASPECT = ['circle', 'actor', 'and', 'nand', 'or', 'nor', 'xor', 'xnor', 'not', 'buffer', 'tristate', 'adder', 'multiplier', 'dff', 'dffr', 'latch', 'sync',
   'clockgate', 'oscillator', 'clock', 'crystal', 'opamp', 'comparator', 'amp', 'pad', 'power', 'ground', 'antenna', 'battery', 'vsource', 'isource',
   'resistor', 'resistor-box', 'capacitor', 'inductor', 'diode', 'led', 'nmos', 'pmos', 'npn', 'pnp', 'switch', 'server', 'user', 'mobile', 'desktop',
   'lock', 'file', 'folder', 'gear', 'message', 'firewall', 'icon'];
@@ -508,7 +517,7 @@ var SYMBOL_ALIAS = {
   oval: 'ellipse', cylinder3: 'cylinder', db: 'database', datastore: 'database', person: 'user', people: 'user',
   io: 'parallelogram', input: 'parallelogram', output: 'parallelogram', data: 'parallelogram',
   start: 'terminator', end: 'terminator', stop: 'terminator', pill: 'terminator', predefined: 'subroutine',
-  inverter: 'not', inv: 'not', buf: 'buffer', tribuf: 'tristate', flipflop: 'dff', ff: 'dff', flop: 'dff', 'd-ff': 'dff',
+  inverter: 'not', inv: 'not', buf: 'buffer', tribuf: 'tristate', flipflop: 'dff', ff: 'dff', flop: 'dff', 'd-ff': 'dff', ffr: 'dffr', 'dff-r': 'dffr', dffrn: 'dffr',
   reg: 'register', mem: 'ram', memory: 'ram', sram: 'ram', regfile: 'ram', xtal: 'crystal', osc: 'oscillator', vco: 'oscillator',
   vdd: 'power', vcc: 'power', supply: 'power', gnd: 'ground', vss: 'ground', nfet: 'nmos', pfet: 'pmos',
   icg: 'clockgate', 'clock-gate': 'clockgate', synchronizer: 'sync', cdc: 'sync', sum: 'adder', summer: 'adder', mixer: 'multiplier',
