@@ -276,7 +276,17 @@ function aiLog(item) {
 /* ---------- showing the change before it is applied ---------- */
 function aiDiff(a, b) {
   var mapN = function (d) { var m = {}; (d.nodes || []).forEach(function (n) { if (n && str(n.id)) m[str(n.id)] = JSON.stringify(n); }); return m; };
-  var mapE = function (d) { var m = {}; (d.edges || []).forEach(function (e) { if (e) m[str(e.from) + '>' + str(e.to) + '|' + JSON.stringify(e.fromAnchor || '') + JSON.stringify(e.toAnchor || '')] = JSON.stringify(e); }); return m; };
+  /* a wire is known by its ends, its label and which one of such it is; new anchors or bends make it "changed" */
+  var mapE = function (d) {
+    var m = {}, nth = {};
+    (d.edges || []).forEach(function (e) {
+      if (!e) return;
+      var k = str(e.from) + '>' + str(e.to) + '|' + str(asText(e.label));
+      nth[k] = (nth[k] || 0) + 1;
+      m[k + '#' + nth[k]] = JSON.stringify(e);
+    });
+    return m;
+  };
   var mapG = function (d) { var m = {}; (d.groups || []).forEach(function (g) { if (g && str(g.id)) m[str(g.id)] = JSON.stringify(g); }); return m; };
   var mapQ = function (d) { var m = {}; (d.notes || []).forEach(function (q) { if (q && str(q.id)) m[str(q.id)] = JSON.stringify(q); }); return m; };
   /* the tab's own settings (direction, layout, legend, title...) count as one change: without this a change of
@@ -316,8 +326,11 @@ function aiMarkPreview(diff, prev) {
   diff.chg.n.forEach(function (id) { var b = nodeBox(st.L, id); if (b) box(b, '#d97706'); });
   diff.add.g.concat(diff.chg.g).forEach(function (id) { var b = st.L.groups[id]; if (b) box(b, diff.add.g.indexOf(id) >= 0 ? '#16a34a' : '#d97706', '8 5'); });
   if (prev) diff.del.n.forEach(function (id) { var b = nodeBox(prev.L, id); if (b) box(b, '#dc2626', '6 4'); });
+  /* the same wire identity as aiDiff: ends, label, and which one of such it is */
+  var rawEdges = ED.aiPreview ? (ED.aiPreview.after.diagrams[ED.aiPreview.di].edges || []) : [], keyAt = {}, nth = {};
+  rawEdges.forEach(function (e, k) { if (!e) return; var base = str(e.from) + '>' + str(e.to) + '|' + str(asText(e.label)); nth[base] = (nth[base] || 0) + 1; keyAt[k] = base + '#' + nth[base]; });
   st.d.edges.forEach(function (e, i) {
-    var raw = edDiagram() && ED.aiPreview ? ED.aiPreview.after.diagrams[ED.aiPreview.di].edges[e.rawIndex] : null, key = raw ? str(raw.from) + '>' + str(raw.to) + '|' + JSON.stringify(raw.fromAnchor || '') + JSON.stringify(raw.toAnchor || '') : null;
+    var key = keyAt[e.rawIndex];
     if (key && st.edgeEls[i]) st.edgeEls[i].classList.toggle('ai-add', diff.add.e.indexOf(key) >= 0);
   });
   if (root) root.appendChild(ov);

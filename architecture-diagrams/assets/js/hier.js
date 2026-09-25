@@ -1655,7 +1655,8 @@ function hierLayers(inside, ports, wires, size) {
   var ids = inside.map(function (n) { return str(n.id); }), nb = {}, into = {}, portDir = {};
   ids.forEach(function (id) { nb[id] = []; into[id] = 0; });
   ports.forEach(function (p) { portDir[str(p.id)] = str(p.port && p.port.dir) || 'inout'; });
-  var fromIn = {}, toOut = {}, labelW = 0;
+  var fromIn = {}, toOut = {}, labelW = 0, portSide = {}, leftMate = {}, rightMate = {};
+  ports.forEach(function (p) { portSide[str(p.id)] = hierPortSide(p); });
   wires.forEach(function (e) {
     var a = str(e.from), b = str(e.to), lab = str(asText(e.label));
     if (lab) labelW = Math.max(labelW, textWidth(lab, 11, 600) + 16);
@@ -1664,10 +1665,18 @@ function hierLayers(inside, ports, wires, size) {
     if (portDir[b] && nb[a] && portDir[b] === 'in') fromIn[a] = true;
     if (portDir[b] && nb[a] && portDir[b] === 'out') toOut[a] = true;
     if (portDir[a] && nb[b] && portDir[a] === 'out') toOut[b] = true;
+    /* which side of the frame each block's port is on: a block wired to a port on the right belongs on the right */
+    var pid = portDir[a] ? a : portDir[b] ? b : null, inner = pid === a ? b : a;
+    if (pid && nb[inner]) { if (portSide[pid] === 'left') leftMate[inner] = true; if (portSide[pid] === 'right') rightMate[inner] = true; }
   });
   var rank = {}, queue = [];
   var seed = function (list) { list.forEach(function (id) { if (rank[id] === undefined) { rank[id] = 0; queue.push(id); } }); };
-  seed(ids.filter(function (id) { return fromIn[id]; }));
+  /* the columns start from the blocks on the frame's left ports; when the frame's ports are all on the right, from the
+     blocks there, and the columns are then mirrored so those blocks sit next to their ports; else from the inputs */
+  var mirror = false;
+  seed(ids.filter(function (id) { return leftMate[id]; }));
+  if (!queue.length) { seed(ids.filter(function (id) { return rightMate[id]; })); mirror = queue.length > 0; }
+  if (!queue.length) seed(ids.filter(function (id) { return fromIn[id]; }));
   if (!queue.length) seed(ids.filter(function (id) { return !into[id] && !toOut[id]; }));
   if (!queue.length) seed(ids.slice(0, 1));
   for (;;) {
@@ -1679,6 +1688,10 @@ function hierLayers(inside, ports, wires, size) {
     if (!rest.length) break;
     seed(rest.slice(0, 1));
   }
+  var last = Math.max.apply(null, ids.map(function (id) { return rank[id]; }));
+  if (mirror) ids.forEach(function (id) { rank[id] = last - rank[id]; });
+  /* with ports on both sides: blocks on a right-side port go to the last column, next to their port */
+  else ids.forEach(function (id) { if (rightMate[id] && !leftMate[id] && last > 0) rank[id] = last; });
   var cols = [];
   ids.forEach(function (id) { (cols[rank[id]] = cols[rank[id]] || []).push(id); });
   cols = cols.filter(Boolean);
