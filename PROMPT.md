@@ -35,6 +35,8 @@ Each diagram becomes one tab. Every diagram has "id" (letters, digits, - or _), 
 - "steps": [{"node": "<id>" or "edge": ["<from>", "<to>"], "title", "text"}] is a guided walkthrough.
 - "legend": {"colors": {"blue": "meaning"}, "edges": {"clock": "meaning"}}.
 - Layout: by default the tool places blocks itself ("direction": "TB", "LR", "BT" or "RL"). With "layout": "manual", every node needs "x" and "y" (top-left corner, pixels); "w" and "h" are optional; "route": "orthogonal" is usual for schematics.
+- "notes": [{"id", "text", "kind", "attach"}] are sticky notes: kind is note, constraint, reason, change, question, todo or legend; attach is a block or frame id, or [from, to] for a wire.
+- Detail boards ("boardOf") and inside tabs ("detailOf") hold the detail of the blocks of an overview: frames (groups with "source" and "x", "y", "w", "h") with port nodes on their border ("port": {"of": "<frame id>", "name", "dir"}, shape port-in, port-out or port-io; pin EXT faces outside, INT inside). Keep "boardOf", "detailOf", "source", "detail" and "port" as they are; wire the inside of a frame to "<port id>.INT". Port names: i_, o_ or io_ in front, snake_case, _n for active-low.
 
 2. wave: timing diagrams in WaveDrom WaveJSON: {"type": "wave", "wave": {"signal": [{"name": "clk", "wave": "p......"}, {"name": "data", "wave": "x.==.x", "data": ["A", "B"], "node": "..a.b"}], "edge": ["a~>b 2 cycles"]}}.
    Wave characters: 0 1 x z . = 2-9 p n P N h l H L u d |. Arrows in "edge" join marker letters placed in "node".
@@ -74,6 +76,12 @@ Symbols for "shape" (name: pins as NAME(direction)@[x, y]; directions: in, out, 
 - fifo: IN(in)@[0, 0.5], OUT(out)@[1, 0.5]
 - sync: D(in)@[0, 0.32], CLK(clk)@[0, 0.78], Q(out)@[1, 0.32]
 - clockgate: EN(in)@[0, 0.3], CLK(clk)@[0, 0.74], GCLK(out)@[1, 0.5]
+- port-in: EXT(in)@[0, 0.5], INT(out)@[1, 0.5]
+- port-out: INT(in)@[0, 0.5], EXT(out)@[1, 0.5]
+- port-io: EXT(io)@[0, 0.5], INT(io)@[1, 0.5]
+- port-in-v: EXT(in)@[0.5, 0], INT(out)@[0.5, 1]
+- port-out-v: INT(in)@[0.5, 1], EXT(out)@[0.5, 0]
+- port-io-v: EXT(io)@[0.5, 0], INT(io)@[0.5, 1]
 - oscillator: OUT(out)@[1, 0.5]
 - clock: CLK(out)@[1, 0.5]
 - crystal: X1(io)@[0, 0.5], X2(io)@[1, 0.5]

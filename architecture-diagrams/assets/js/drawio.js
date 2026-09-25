@@ -142,6 +142,7 @@ function dioLabelPos(sty) {
 /* Returns the node fields this tool derives from a draw.io vertex style (also used to see what changed). */
 function dioVertexModel(sty, w, h, label) {
   var name = dioShapeName(sty), shape = DIO_SHAPES[name], unsupported = false;
+  if (sty.adShape && SYMBOLS[sty.adShape] && !SYMBOLS[sty.adShape].native) shape = sty.adShape;
   if (!shape && /^mxgraph\./.test(name) && stencilKnown(name)) shape = name;
   if (!shape) { shape = 'box'; unsupported = true; }
   /* a label that is only a picture (<img> in an HTML label) is drawn as an image */
@@ -360,6 +361,8 @@ function dioConvertPage(model, name, index, pageEl) {
   cells.forEach(function (c) {
     if (!c.vertex || layerIds[c.id] || hiddenLayer[layerOf(c)]) return;
     if (c.parent && byId[c.parent] && byId[c.parent].edge) return;
+    /* sticky notes and the page's links (written by this tool) are not blocks */
+    if (c.attrs && (c.attrs.adNote || c.attrs.adPage)) return;
     var hasKids = c.children.some(function (k) { return k.vertex || k.edge; });
     var isGroup = c.sty._names.indexOf('group') >= 0 || (hasKids && c.sty.shape !== 'image');
     kind[c.id] = isGroup ? 'group' : 'node';
@@ -383,6 +386,7 @@ function dioConvertPage(model, name, index, pageEl) {
         if (!gm.style.valign) gm.style.valign = lane ? 'top' : 'middle';
       }
       var grp = { id: c.id, label: label.text, x: a.x, y: a.y, w: g.w, h: g.h, hidden: hidden, style: gm.style, drawio: dio };
+      dioTakeLinks(grp, dio);
       var pg = parentGroup(c);
       if (pg) grp.parent = pg;
       groups.push(grp);
@@ -391,6 +395,7 @@ function dioConvertPage(model, name, index, pageEl) {
     var vm = dioVertexModel(c.sty, g.w, g.h, label);
     if (vm.unsupported) unsupported++;
     var node = { id: c.id, title: label.text, shape: vm.shape, x: a.x, y: a.y, w: g.w || 1, h: g.h || 1, labelPos: vm.labelPos, style: vm.style, drawio: dio };
+    dioTakeLinks(node, dio);
     if (vm.src) node.src = vm.src;
     if (c.attrs && c.attrs.tooltip) node.desc = c.attrs.tooltip;
     var pg2 = parentGroup(c);
@@ -399,6 +404,7 @@ function dioConvertPage(model, name, index, pageEl) {
   });
   cells.forEach(function (c) {
     if (!c.edge || hiddenLayer[layerOf(c)]) return;
+    if (c.attrs && c.attrs.adNoteLink) return;
     var g = c.geo || { points: [] }, origin = abs(byId[c.parent] && byId[c.parent].vertex ? byId[c.parent] : null);
     var shift = function (p) { return p ? { x: p.x + origin.x, y: p.y + origin.y } : null; };
     var em = dioEdgeModel(c.sty);
@@ -441,10 +447,51 @@ function dioConvertPage(model, name, index, pageEl) {
     return o;
   }), root: rootCell ? rootCell.id : '0' };
   Array.prototype.forEach.call(model.attributes, function (a) { meta.model[a.name] = a.value; });
-  return {
+  var page = {
     id: (pageEl && pageEl.getAttribute('id')) || ('page-' + (index + 1)), title: name, type: 'graph', layout: 'manual', source: 'drawio',
     font: 'Helvetica, Arial, sans-serif', nodes: nodes, groups: groups, edges: edges, drawio: meta, unsupported: unsupported
   };
+  dioTakeNotes(page, cells, byId, abs);
+  return page;
+}
+/* ---------- this tool's own data kept in a draw.io file: ports, links between pages, sticky notes ---------- */
+var DIO_OWN = ['adSource', 'adDetail', 'adPortName', 'adPortDir', 'adPortKind', 'adPortOf'];
+function dioTakeLinks(o, dio) {
+  var a = dio.attrs;
+  if (!a) return;
+  if (a.adSource) o.source = a.adSource;
+  if (a.adDetail) o.detail = a.adDetail;
+  if (a.adPortName) {
+    o.port = { name: a.adPortName, dir: a.adPortDir || 'inout' };
+    if (a.adPortOf) o.port.of = a.adPortOf;
+    if (a.adPortKind) o.port.kind = a.adPortKind;
+  }
+  if (a.adDetail && /^data:page\/id,/.test(a.link || '')) delete a.link;
+  DIO_OWN.forEach(function (k) { delete a[k]; });
+  if (Object.keys(a).length === 1 && a.tag === 'UserObject') delete dio.attrs;
+}
+function dioTakeNotes(page, cells, byId, abs) {
+  cells.forEach(function (c) {
+    var a = c.attrs;
+    if (!a) return;
+    if (a.adPage) {
+      if (a.adBoardOf) page.boardOf = a.adBoardOf;
+      if (a.adDetailTab) page.detailOf = { tab: a.adDetailTab, block: a.adDetailBlock || '' };
+      return;
+    }
+    if (!a.adNote) return;
+    var p = abs(c), g = c.geo || { w: 210, h: 60 }, att = str(a.adAttach);
+    var q = { id: str(c.id).replace(/^note-/, '') || 'n' + ((page.notes || []).length + 1), text: str(a.adText) || dioLabel(c.value, true).text, kind: NOTE_KINDS.indexOf(a.adKind) >= 0 ? a.adKind : 'note' };
+    if (a.adDate) q.date = str(a.adDate);
+    if (a.adBy) q.by = str(a.adBy);
+    if (att.indexOf('>') > 0) q.attach = att.split('>');
+    else if (att) q.attach = att;
+    var t = typeof q.attach === 'string' ? byId[q.attach] : null;
+    if (t && t.geo) { var tp = abs(t); q.dx = Math.round(p.x - (tp.x + (t.geo.w || 0))); q.dy = Math.round(p.y - tp.y); }
+    else if (!q.attach) { q.x = Math.round(p.x); q.y = Math.round(p.y); }
+    if (g.w) q.w = Math.round(g.w);
+    (page.notes || (page.notes = [])).push(q);
+  });
 }
 function cellElementOf(rootEl, id) {
   var found = null;
@@ -493,7 +540,7 @@ function dioCell(attrs, inner, wrapperAttrs) {
   if (!wrapperAttrs) return cell;
   var tag = wrapperAttrs.tag === 'object' ? 'object' : 'UserObject';
   var keys = ['label'].concat(Object.keys(wrapperAttrs).filter(function (k) { return k !== 'tag' && k !== 'label' && k !== 'id'; })).concat(['id']);
-  var w = '<' + tag + keys.filter(function (k) { return wrapperAttrs[k] !== undefined; }).map(function (k) { return ' ' + k + '="' + xmlEsc(wrapperAttrs[k]) + '"'; }).join('') + '>';
+  var w = '<' + tag + keys.filter(function (k) { return wrapperAttrs[k] !== undefined && wrapperAttrs[k] !== null; }).map(function (k) { return ' ' + k + '="' + xmlEsc(wrapperAttrs[k]) + '"'; }).join('') + '>';
   return w + cell + '</' + tag + '>';
 }
 
@@ -552,7 +599,8 @@ function dioShapeStyle(n, m) {
     return base;
   }
   var b64 = STENCIL_B64[stencilKey(n, m, symbolColors(n, THEMES.light).stroke)];
-  if (b64) return 'shape=stencil(' + b64 + ');';
+  /* adShape names the symbol, so opening the file here again gives the symbol back with its pins */
+  if (b64) return 'shape=stencil(' + b64 + ');adShape=' + n.shape + ';';
   /* no CompressionStream: fall back to a picture of the symbol */
   var svg = S('svg', { xmlns: SVG_NS, width: fmt(m.w), height: fmt(m.h), viewBox: '0 0 ' + fmt(m.w) + ' ' + fmt(m.h) }, symbolElements(n.shape, m.w, m.h, symbolColors(n, THEMES.light)));
   return 'shape=image;imageAspect=0;image=data:image/svg+xml,' + b64utf8(new XMLSerializer().serializeToString(svg)) + ';';
@@ -688,7 +736,7 @@ function drawioGraphPage(st) {
       value = htmlEsc(chipLabel(g));
     }
     items.push({ z: g.drawio && isFinite(g.drawio.z) ? g.drawio.z : -1e6 + i, xml: dioCell({ id: cellId['g:' + g.id], value: value, style: style, vertex: 1, connectable: g.hidden ? 0 : null, parent: par.id },
-      dioGeometry(b.x + ox - par.x, b.y + oy - par.y, b.w, b.h), g.drawio && g.drawio.attrs) });
+      dioGeometry(b.x + ox - par.x, b.y + oy - par.y, b.w, b.h), dioOwnAttrs(g.drawio && g.drawio.attrs, { adSource: dioCellOf(d.boardOf, g.source, false), adDetail: g.detail, link: g.detail ? 'data:page/id,' + dioPageOf(g.detail) : null })) });
   });
   d.nodes.forEach(function (n, i) {
     var p = L.nodes[n.id], m = L.nodeM[n.id];
@@ -722,8 +770,10 @@ function drawioGraphPage(st) {
         }
       }
     }
+    var own = { adDetail: n.detail, link: n.detail ? 'data:page/id,' + dioPageOf(n.detail) : null };
+    if (n.port) { own.adPortName = n.port.name; own.adPortDir = n.port.dir; own.adPortKind = n.port.kind; own.adPortOf = n.port.of ? cellId['g:' + n.port.of] || n.port.of : null; }
     items.push({ z: n.drawio && isFinite(n.drawio.z) ? n.drawio.z : 1e6 + i, xml: dioCell({ id: id, value: value, style: style, vertex: 1, parent: par.id },
-      dioGeometry(x - par.x, y - par.y, m.w, m.h), n.drawio && n.drawio.attrs) + extra });
+      dioGeometry(x - par.x, y - par.y, m.w, m.h), dioOwnAttrs(n.drawio && n.drawio.attrs, own)) + extra });
   });
   d.edges.forEach(function (e, i) {
     var geo = L.edges[i], id = e.drawio && e.id ? e.id : 'e-' + i;
@@ -750,6 +800,12 @@ function drawioGraphPage(st) {
     if (keepKids) xml += e.drawio.labelCells.join('');
     items.push({ z: e.drawio && isFinite(e.drawio.z) ? e.drawio.z : 2e6 + i, xml: xml });
   });
+  dioNoteItems(d, L, ox, oy, endCell, defaultLayer, items);
+  if (d.boardOf || d.detailOf) {
+    items.push({ z: -2e6, xml: dioCell({ id: 'ad-page', value: '', style: 'text;html=1;', vertex: 1, parent: defaultLayer, visible: 0 }, dioGeometry(0, 0, 10, 10),
+      { tag: 'UserObject', adPage: '1', adBoardOf: d.boardOf || null, adDetailTab: d.detailOf ? d.detailOf.tab : null,
+        adDetailBlock: d.detailOf ? dioCellOf(d.detailOf.tab, d.detailOf.block, true) : null }) });
+  }
   items.sort(function (a, b) { return a.z - b.z; });
   var model = meta && meta.model ? meta.model : {};
   var modelAttrs = { dx: 0, dy: 0, grid: 1, gridSize: 10, guides: 1, tooltips: 1, connect: 1, arrows: 1, fold: 1, page: 1, pageScale: 1,
@@ -761,6 +817,43 @@ function drawioGraphPage(st) {
   }).join('');
   var pageId = meta && meta.id ? meta.id : d.id;
   return '<diagram id="' + xmlEsc(pageId) + '" name="' + xmlEsc(d.title || (meta && meta.name) || d.id) + '">' + head + layerXml + items.map(function (it) { return it.xml; }).join('') + '</root></mxGraphModel></diagram>';
+}
+function dioOwnAttrs(base, own) {
+  var keys = Object.keys(own).filter(function (k) { return own[k] !== undefined && own[k] !== null && own[k] !== ''; });
+  if (!keys.length) return base || null;
+  var a = base ? JSON.parse(JSON.stringify(base)) : { tag: 'UserObject' };
+  keys.forEach(function (k) { a[k] = String(own[k]); });
+  return a;
+}
+/* The draw.io page id of a tab, and the cell id a block or frame of a tab gets in the file (see cellId above). */
+function dioPageOf(tabId) {
+  var hit = (spec && spec.diagrams ? spec.diagrams : []).filter(function (x) { return x.id === tabId; })[0];
+  return hit && hit.drawio && hit.drawio.id ? hit.drawio.id : tabId;
+}
+function dioCellOf(tabId, id, groupsFirst) {
+  if (!id) return null;
+  var hit = (spec && spec.diagrams ? spec.diagrams : []).filter(function (x) { return x.id === tabId; })[0];
+  if (!hit || hit.kind !== 'graph') return id;
+  var g = hit.groupById[id], n = hit.nodeById[id];
+  if (groupsFirst && g) return g.drawio ? g.id : 'g-' + g.id;
+  if (n) return n.drawio ? n.id : 'n-' + n.id;
+  if (g) return g.drawio ? g.id : 'g-' + g.id;
+  return id;
+}
+/* Sticky notes as draw.io note shapes (yellow, like the notes engineers draw), with a dashed line to what they are about. */
+function dioNoteItems(d, L, ox, oy, endCell, layer, items) {
+  var boxes = L.notes && L.notes.length ? L.notes : layoutNotes(d, L, true), kinds = t('noteKinds') || {};
+  boxes.forEach(function (b, k) {
+    var q = b.q, id = 'note-' + q.id, att = null, target = null;
+    if (q.attach && q.attach.type === 'edge') { var e = d.edges[q.attach.index]; if (e) att = endCell(e.from) + '>' + endCell(e.to); }
+    else if (q.attach) { att = endCell(q.attach.id); target = att; }
+    var head = [kinds[q.kind] || q.kind, noteDate(q.date), q.by].filter(Boolean).join(' · ');
+    var value = '<b>' + htmlEsc(head) + '</b><br>' + htmlEsc(q.text).replace(/\n/g, '<br>');
+    items.push({ z: 3e6 + k * 2, xml: dioCell({ id: id, value: value, style: 'shape=note;whiteSpace=wrap;html=1;size=11;fillColor=#fff2cc;strokeColor=#d6b656;fontColor=#3a3320;align=left;verticalAlign=top;spacing=6;fontSize=11;',
+      vertex: 1, parent: layer }, dioGeometry(b.x + ox, b.y + oy, b.w, b.h), { tag: 'UserObject', adNote: '1', adKind: q.kind, adText: q.text, adDate: q.date || null, adBy: q.by || null, adAttach: att }) });
+    if (target) items.push({ z: 3e6 + k * 2 + 1, xml: dioCell({ id: id + '-link', value: '', style: 'endArrow=none;dashed=1;strokeColor=#c9a227;html=1;', edge: 1, parent: layer, source: id, target: target },
+      '<mxGeometry relative="1" as="geometry"/>', { tag: 'UserObject', adNoteLink: '1' }) });
+  });
 }
 function drawioImagePage(st) {
   var saved = themeName;

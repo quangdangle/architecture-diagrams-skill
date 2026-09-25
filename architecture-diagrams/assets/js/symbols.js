@@ -281,6 +281,33 @@ var SYMBOLS = {
               part(np().M(gx, gy).L(gx + gw / 2, gy).A(gw / 2, gh / 2, 0, 0, 1, gx + gw / 2, gy + gh).L(gx, gy + gh).Z(), 'none'),
               tpart('EN', w * 0.1, h * 0.3 + 4, 9.5, 'start')];
     } },
+  /* Ports of a block on a detail board or in a detail tab: EXT faces the outside of the frame, INT the inside.
+     A port on the right edge of its frame is mirrored (flipH), so EXT stays on the outer side. */
+  'port-in': { cat: 'digital', size: [110, 26], label: 'center', boxy: true, perimeter: 'poly', pins: [[0, 0.5, 'EXT', 'in'], [1, 0.5, 'INT', 'out']],
+    labelBox: function (w, h) { return { x: 2, y: 0, w: Math.max(8, w - h * 0.5 - 2), h: h }; },
+    outline: function (w, h) { return [[0, 0], [w - h * 0.5, 0], [w, h / 2], [w - h * 0.5, h], [0, h]]; },
+    draw: function (w, h) { return [part(np().poly(this.outline(w, h), true), 'fill')]; } },
+  'port-out': { cat: 'digital', size: [110, 26], label: 'center', boxy: true, perimeter: 'poly', pins: [[0, 0.5, 'INT', 'in'], [1, 0.5, 'EXT', 'out']],
+    labelBox: function (w, h) { return { x: 2, y: 0, w: Math.max(8, w - h * 0.5 - 2), h: h }; },
+    outline: function (w, h) { return [[0, 0], [w - h * 0.5, 0], [w, h / 2], [w - h * 0.5, h], [0, h]]; },
+    draw: function (w, h) { return [part(np().poly(this.outline(w, h), true), 'fill')]; } },
+  'port-io': { cat: 'digital', size: [110, 26], label: 'center', boxy: true, perimeter: 'poly', pins: [[0, 0.5, 'EXT', 'io'], [1, 0.5, 'INT', 'io']],
+    labelBox: function (w, h) { return { x: h * 0.5, y: 0, w: Math.max(8, w - h), h: h }; },
+    outline: function (w, h) { return [[h * 0.5, 0], [w - h * 0.5, 0], [w, h / 2], [w - h * 0.5, h], [h * 0.5, h], [0, h / 2]]; },
+    draw: function (w, h) { return [part(np().poly(this.outline(w, h), true), 'fill')]; } },
+  /* The same ports for the top and bottom edges of a frame: EXT on top, the text stays level. On the bottom edge they are flipped (flipV). */
+  'port-in-v': { cat: 'digital', size: [96, 34], label: 'center', boxy: true, perimeter: 'poly', pins: [[0.5, 0, 'EXT', 'in'], [0.5, 1, 'INT', 'out']],
+    labelBox: function (w, h) { return { x: 2, y: 0, w: Math.max(8, w - 4), h: h * 0.66 }; },
+    outline: function (w, h) { return [[0, 0], [w, 0], [w, h * 0.66], [w / 2, h], [0, h * 0.66]]; },
+    draw: function (w, h) { return [part(np().poly(this.outline(w, h), true), 'fill')]; } },
+  'port-out-v': { cat: 'digital', size: [96, 34], label: 'center', boxy: true, perimeter: 'poly', pins: [[0.5, 1, 'INT', 'in'], [0.5, 0, 'EXT', 'out']],
+    labelBox: function (w, h) { return { x: 2, y: h * 0.34, w: Math.max(8, w - 4), h: h * 0.66 }; },
+    outline: function (w, h) { return [[w / 2, 0], [w, h * 0.34], [w, h], [0, h], [0, h * 0.34]]; },
+    draw: function (w, h) { return [part(np().poly(this.outline(w, h), true), 'fill')]; } },
+  'port-io-v': { cat: 'digital', size: [96, 34], label: 'center', boxy: true, perimeter: 'poly', pins: [[0.5, 0, 'EXT', 'io'], [0.5, 1, 'INT', 'io']],
+    labelBox: function (w, h) { return { x: 2, y: h * 0.26, w: Math.max(8, w - 4), h: h * 0.48 }; },
+    outline: function (w, h) { return [[w / 2, 0], [w, h * 0.26], [w, h * 0.74], [w / 2, h], [0, h * 0.74], [0, h * 0.26]]; },
+    draw: function (w, h) { return [part(np().poly(this.outline(w, h), true), 'fill')]; } },
   ic: { cat: 'digital', size: [96, 72], label: 'center', boxy: true, labelBox: function (w, h) { return { x: w * 0.12, y: 0, w: w * 0.76, h: h }; },
     draw: function (w, h) {
       var p = np(), n = Math.max(2, Math.min(6, Math.round(h / 16)));
@@ -524,7 +551,7 @@ var SYMBOL_ALIAS = {
   amplifier: 'amp', comp: 'comparator', chip: 'ic', phone: 'mobile', computer: 'desktop', pc: 'desktop', laptop: 'desktop',
   web: 'browser', mail: 'message', email: 'message', envelope: 'message', settings: 'gear', service: 'gear',
   security: 'lock', doc: 'document', page: 'file', directory: 'folder', bracket: 'brace', 'curly-bracket': 'brace', label: 'text',
-  bondpad: 'pad', 'io-pad': 'pad'
+  bondpad: 'pad', 'io-pad': 'pad', port: 'port-io', inport: 'port-in', outport: 'port-out', ioport: 'port-io'
 };
 
 var SYMBOL_CATS = ['basic', 'logic', 'digital', 'analog', 'passive', 'software'];

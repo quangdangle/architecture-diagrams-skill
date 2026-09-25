@@ -6,6 +6,8 @@ Usage:
     python3 assist.py SPEC --pattern sync2 [--near ff1] [-o OUT]    insert a pattern (wired to block ff1)
     python3 assist.py SPEC --suggest [--node ff1]                   problems with their fixes, and suggestions
     python3 assist.py SPEC --ops ops.json [-o OUT]                  apply editing operations
+    python3 assist.py SPEC --board [-o OUT]                         build the detail board of a tab (a frame per block)
+    python3 assist.py SPEC --inside BLOCK [-o OUT]                  move what is inside a block or frame to a tab of its own
     add --diagram ID to pick a tab (default: the first block-diagram tab)
 
 SPEC is a JSON spec. Operations (the "ops" format, see references/spec.md):
@@ -95,17 +97,35 @@ def suggest(spec, node=None, diagram=None):
     return run(spec, {"action": "suggest", "node": node, "diagram": diagram})
 
 
+def build_board(spec, diagram=None):
+    """A hand-placed detail board for a tab: every block becomes a frame with its ports, every connection a wire."""
+    return run(spec, {"action": "board", "diagram": diagram})
+
+
+def open_inside(spec, block, diagram=None):
+    """The inside of a block (or of a frame on a detail board) in a tab of its own; the block keeps its ports."""
+    if not block:
+        raise AssistError("give the id of the block or frame")
+    return run(spec, {"action": "inside", "block": block, "diagram": diagram})
+
+
 def describe(result):
     """A short text report: what changed, what is left in Checks (with its fixes), the suggestions."""
     lines = []
+    if result.get("board"):
+        lines.append(("Detail board already there: " if result.get("existed") else "Built the detail board: ") + result["board"])
+    if result.get("inside"):
+        lines.append(("Tab with the inside already there: " if result.get("existed") else "The inside is now in tab: ") + result["inside"])
     if result.get("added"):
         lines.append("Added blocks: " + ", ".join(result["added"]))
     for note in result.get("notes") or []:
         lines.append("Note: " + note)
     checks = result.get("checks") or []
-    lines.append(f"Checks on tab {result.get('tab')}: " + (f"{len(checks)} problem(s)" if checks else "no problems"))
+    hard = [c for c in checks if not c.get("soft")]
+    lines.append(f"Checks on tab {result.get('tab')}: " + (f"{len(hard)} problem(s)" if hard else "no problems") +
+                 (f", {len(checks) - len(hard)} advice" if len(checks) > len(hard) else ""))
     for c in checks:
-        lines.append("- " + c["text"])
+        lines.append(("- advice: " if c.get("soft") else "- ") + c["text"])
         for f in c.get("fixes", []):
             lines.append(f"    fix{' (safe)' if f.get('safe') else ''}: {f['label']} -> " + json.dumps(f["ops"], ensure_ascii=False))
     how_of = lambda s: (f'diagram_insert_pattern pattern={s["pattern"]} near={s["node"]}' + (f' clock={s["clock"]}' if s.get("clock") else "")) if s.get("pattern") else json.dumps(s.get("ops"), ensure_ascii=False)
@@ -129,6 +149,8 @@ def main():
     ap.add_argument("--ops", help="JSON file with operations to apply")
     ap.add_argument("--suggest", action="store_true", help="list the problems with their fixes, and suggestions")
     ap.add_argument("--node", help="with --suggest: only suggestions for this block")
+    ap.add_argument("--board", action="store_true", help="build the detail board of the tab: a frame with ports for each block, drawn by hand afterwards")
+    ap.add_argument("--inside", metavar="BLOCK", help="move what is inside this block or frame to a tab of its own")
     ap.add_argument("--diagram", help="tab id (default: the first block-diagram tab)")
     ap.add_argument("--lang", choices=("en", "vi"), default="en", help="language of --patterns")
     ap.add_argument("-o", "--output", help="where to write the changed spec (default: next to SPEC, -edited.json)")
@@ -137,8 +159,8 @@ def main():
         for p in pattern_list(args.lang):
             print(f'{p["id"]:10} [{p["category"]}] {p["title"]}: {p["description"]}')
         return 0
-    if not args.spec or not (args.pattern or args.ops or args.suggest):
-        ap.error("give a spec and one of --pattern, --ops or --suggest (or --patterns alone)")
+    if not args.spec or not (args.pattern or args.ops or args.suggest or args.board or args.inside):
+        ap.error("give a spec and one of --pattern, --ops, --suggest, --board or --inside (or --patterns alone)")
     src = Path(args.spec)
     try:
         spec = json.loads(src.read_text(encoding="utf-8"))
@@ -146,6 +168,10 @@ def main():
             result = insert_pattern(spec, args.pattern, args.near, args.diagram, args.clock)
         elif args.ops:
             result = apply_ops(spec, json.loads(Path(args.ops).read_text(encoding="utf-8")), args.diagram)
+        elif args.board:
+            result = build_board(spec, args.diagram)
+        elif args.inside:
+            result = open_inside(spec, args.inside, args.diagram)
         else:
             result = suggest(spec, args.node, args.diagram)
     except (OSError, ValueError, AssistError) as exc:

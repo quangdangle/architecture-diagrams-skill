@@ -36,7 +36,7 @@ var EDT = {
     colsBlocks: 'Columns and blocks', pkgGrp: 'Chip and package',
     layoutAutoNote: 'The tool lays the diagram out. Drag any block on the drawing to place blocks by hand.',
     layoutManualNote: 'Blocks are placed by hand. Auto layout throws those positions away and lays the diagram out again.',
-    checks: 'Checks', checksOk: 'No input or wiring problems found.', checksN: '{x} things to look at', checksHide: 'Hide list', checksShow: 'Show list',
+    checks: 'Checks', checksOk: 'No input or wiring problems found.', checksN: 'To look at: {x}', checksHide: 'Hide list', checksShow: 'Show list',
     reqNote: 'Fields marked * are required.', tblNote: 'Fields marked * are required. Press ⋯ at the end of a row for more settings.',
     gContent: 'Content', gPins: 'Pins of this symbol', gPorts: 'Ports written on the block', gShow: 'Display', gFlags: 'Marks', gPos: 'Position and size',
     gStyle: 'Colors and lines', gEnds: 'Ends', gPath: 'Path',
@@ -246,7 +246,9 @@ function openEditor(startRaw) {
   ED.original = ED.snap;
   ED.marks = edLoadMarks();
   if (active) states.forEach(function (st, i) { if (st === active) ED.diag = Math.min(i, raw.diagrams.length - 1); });
-  window.__adEditor = { raw: function () { return ED ? ED.raw : null; }, selected: function () { return ED ? ED.selected : null; } };
+  window.__adEditor = { raw: function () { return ED ? ED.raw : null; }, selected: function () { return ED ? ED.selected : null; },
+                        tab: function () { return ED ? ED.diag : null; }, ops: function (ops, label) { return edRunOps(ops, label || 'ops'); },
+                        select: function (ids, frames) { if (!ED) return; ED.nsel = null; ED.gsel = frames && frames.length ? frames.slice() : null; if (ids && ids.length) edSetSelection(ids); else { ED.selected = null; ED.multi = null; edMarkSelection(); } } };
   document.body.classList.add('editing');
   var panel = H('aside', { class: 'ed-panel', 'aria-label': et('edit') });
   ED.panel = panel;
@@ -258,6 +260,7 @@ function openEditor(startRaw) {
 function closeEditor() {
   if (!ED) return;
   if (ED.panel) ED.panel.remove();
+  if (ED.aiBox) ED.aiBox.remove();
   document.body.classList.remove('editing');
   var btn = document.getElementById('edit-btn');
   if (btn) btn.classList.remove('on');
@@ -287,7 +290,11 @@ function edRestoreView(v) {
   states.forEach(function (st) { var s = v.scroll[st.d.id]; if (s && st.canvas) { st.canvas.scrollLeft = s[0]; st.canvas.scrollTop = s[1]; } });
 }
 function edRender() {
-  if (!ED) return;
+  if (!ED || ED.aiPreview) return;
+  /* the AI box floats over the page: it goes when its tab is no longer the one shown */
+  if (ED.aiBox && ED.aiBoxTab !== ED.diag) { ED.aiBox.remove(); ED.aiBox = null; }
+  /* a detail board follows its overview, and a block's own tab follows its ports (hier.js) */
+  if (!ED.noSync && typeof hierSync === 'function') hierSync(ED.raw, ED.diag);
   var v = edCaptureView();
   var d = edDiagram();
   if (d) v.id = str(d.id).replace(/[^A-Za-z0-9_.-]/g, '-') || ('diagram-' + (ED.diag + 1));
@@ -346,7 +353,9 @@ function edMove(steps) {
   ED.diag = Math.min(ED.diag, ED.raw.diagrams.length - 1);
   ED.selected = null;
   if (ED.view === 'history') edBuildHistory(); else if (ED.view === 'json') edBuildJson(); else edBuildForm();
+  ED.noSync = true;
   edRender();
+  ED.noSync = false;
   edUpdateButtons();
   edSaveDraft();
 }
@@ -422,8 +431,8 @@ function edBuild() {
   [ED.btnUndo, ED.btnRedo, H('span', { class: 'tb-sep' }), bOpen, file, saveMenu, bClose].forEach(function (el) { head.appendChild(el); });
   p.appendChild(head);
   var tabs = H('div', { class: 'ed-tabs', role: 'tablist' });
-  ['form', 'json', 'history'].forEach(function (v) {
-    var b = H('button', { type: 'button', role: 'tab', class: 'ed-tab', 'aria-selected': ED.view === v ? 'true' : 'false', text: et(v) });
+  ['form', 'json', 'history'].concat(typeof aiBuildPanel === 'function' ? ['ai'] : []).forEach(function (v) {
+    var b = H('button', { type: 'button', role: 'tab', class: 'ed-tab' + (v === 'ai' ? ' ed-tab-ai' : ''), 'aria-selected': ED.view === v ? 'true' : 'false', text: v === 'ai' ? '✦ ' + aiT('tab') : et(v) });
     b.addEventListener('click', function () { ED.view = v; edBuild(); });
     tabs.appendChild(b);
   });
@@ -441,7 +450,7 @@ function edBuild() {
     window.addEventListener('pointerup', up);
   });
   p.appendChild(grip);
-  if (ED.view === 'json') edBuildJson(); else if (ED.view === 'history') edBuildHistory(); else edBuildForm();
+  if (ED.view === 'json') edBuildJson(); else if (ED.view === 'history') edBuildHistory(); else if (ED.view === 'ai') aiBuildPanel(); else edBuildForm();
   edUpdateButtons();
 }
 function edMenu(label, items) {
@@ -954,6 +963,7 @@ function edBuildForm() {
   });
   pick.appendChild(H('label', { text: et('diagram') }));
   [sel, addMenu, dup, del].forEach(function (x) { pick.appendChild(x); });
+  if (typeof hierPickButtons === 'function') hierPickButtons(pick);
   ED.body.appendChild(pick);
   var start = edStartPanel();
   if (start) ED.body.appendChild(start);
@@ -1054,6 +1064,7 @@ function edRefreshChecks() {
   (ED.wires || []).forEach(function (w) { items.push({ w: w, pane: edWireOnNode(w) ? 'nodes' : 'edges', text: w.text }); });
   var mine = st ? '[' + (st.d.title || st.d.id) + '] ' : null;
   problemList.forEach(function (p) { if (!(ED_COVERED[p.key] && p.where === mine)) items.push({ text: p.text }); });
+  if (typeof hierIssues === 'function') hierIssues(ED.raw, ED.diag).forEach(function (q) { items.push({ text: q.text, pane: q.edge !== undefined ? 'edges' : 'nodes', hfix: q.fixes || [] }); });
   items.forEach(function (it) { it.fixes = edFixesFor(it); });
   box.textContent = '';
   box.classList.toggle('ok', !items.length);
@@ -1407,7 +1418,12 @@ function edSetup(pane, d, extraRows, layout) {
   if (layout) pane.appendChild(layout);
   edGroup(pane, et('thisTab'), [
     [ec('title'), edInput(d.title, function (v) { setOrDelete(d, 'title', v); edChanged(false); })],
-    [ec('id'), edInput(d.id, function (v) { setOrDelete(d, 'id', String(v).replace(/[^A-Za-z0-9_.-]/g, '-')); edChanged(false); }, { lazy: true }), { hint: h.tabId }],
+    [ec('id'), edInput(d.id, function (v) {
+      var at0 = raw.diagrams.indexOf(d), old = typeof hierTabId === 'function' ? hierTabId(d, at0) : null;
+      setOrDelete(d, 'id', String(v).replace(/[^A-Za-z0-9_.-]/g, '-'));
+      if (old && typeof hierRenameTab === 'function') hierRenameTab(raw, old, hierTabId(d, at0));
+      edChanged(false);
+    }, { lazy: true }), { hint: h.tabId }],
     [ec('tag'), edInput(d.tag, function (v) { setOrDelete(d, 'tag', v); edChanged(false); })],
     [ec('summary'), edInput(d.summary, function (v) { setOrDelete(d, 'summary', v); edChanged(false); }, { type: 'area' }), { hint: h.summary }]
   ].concat(extraRows || []));
@@ -1415,7 +1431,7 @@ function edSetup(pane, d, extraRows, layout) {
     [et('docTitle'), edInput(raw.title, function (v) { setOrDelete(raw, 'title', v); edChanged(false); })],
     [et('docSub'), edInput(raw.subtitle, function (v) { setOrDelete(raw, 'subtitle', v); edChanged(false); }, { type: 'area' })],
     [et('docLang'), edInput(raw.lang || lang, function (v) { raw.lang = v; lang = v; edChanged(false); edBuild(); }, { type: 'select', options: [['vi', 'Tiếng Việt'], ['en', 'English']] })]
-  ]);
+  ]);  if (layout && typeof hierSetupRows === 'function') hierSetupRows(pane);
 }
 
 /* Block diagrams and flows. */
@@ -1451,6 +1467,7 @@ function edUniqueId(list, base) {
   for (var i = 2; ; i++) if (!used[base + i]) return base + i;
 }
 function edRenameNode(d, oldId, newId) {
+  if (typeof hierRenameRefs === 'function') hierRenameRefs(ED.raw, d, oldId, newId);
   (d.edges || []).forEach(function (e) { if (e.from === oldId) e.from = newId; if (e.to === oldId) e.to = newId; });
   (d.steps || []).forEach(function (s) {
     if (s.node === oldId) s.node = newId;
@@ -1458,6 +1475,7 @@ function edRenameNode(d, oldId, newId) {
   });
 }
 function edRemoveNode(d, id) {
+  if (typeof hierDetachNotes === 'function') hierDetachNotes(d, id);
   d.nodes = (d.nodes || []).filter(function (n) { return n.id !== id; });
   d.edges = (d.edges || []).filter(function (e) { return e.from !== id && e.to !== id; });
   d.steps = (d.steps || []).filter(function (s) { return s.node !== id && !(Array.isArray(s.edge) && s.edge.indexOf(id) >= 0); });
@@ -1502,7 +1520,8 @@ function edFormGraph(d) {
   edDatalist('ed-ids', edIdsOf(d, manual));
   edDatalist('ed-icons', edIconOptions());
   var P = edPanes([['nodes', et('nodes'), d.nodes.length], ['edges', et('edges'), d.edges.length], ['groups', et('groups'), (d.groups || []).length],
-                   ['steps', et('stepsShort'), (d.steps || []).length], ['legend', et('legend')], ['setup', et('setup')]]);
+                   ['steps', et('stepsShort'), (d.steps || []).length], ['notes', ht('notes'), (d.notes || []).length], ['legend', et('legend')], ['setup', et('setup')]]);
+  hierNotesPane(d, P.notes);
 
   edPatternSection(P.nodes);
   edPalette(d, P.nodes);
@@ -2039,6 +2058,7 @@ function edMarkSelection() {
   Array.prototype.forEach.call(ED.body.querySelectorAll('.ed-row.sel'), function (tr) { tr.classList.remove('sel'); });
   edDrawOverlay();
   edRefreshSuggest();
+  if (typeof hierAfterSelect === 'function') hierAfterSelect();
   if (!ED.selected) return;
   if (ED.multi) ED.multi.forEach(function (id) { var r = ED.body.querySelector('.ed-row[data-key="' + edCss('n:' + id) + '"]'); if (r) r.classList.add('sel'); });
   var key = ED.selected.id !== undefined ? 'n:' + ED.selected.id : 'e:' + ED.selected.edge;
@@ -2268,8 +2288,10 @@ function edNodeAt(ev) {
   return best ? best.id : null;
 }
 function edPointerDown(ev) {
+  if (ED && ED.aiPreview) return;
   if (!ED || !active || active.d.kind !== 'graph' || ev.button !== 0 || !active.svg || !active.canvas || !active.canvas.contains(ev.target)) return;
-  if (ev.target.closest && ev.target.closest('.ed-edgebar, .ed-inline-edit, .minimap, .tb-btn')) return;
+  if (ev.target.closest && ev.target.closest('.ed-edgebar, .ed-inline-edit, .minimap, .tb-btn, .ai-box')) return;
+  if (typeof hierPointerDown === 'function' && hierPointerDown(ev)) return;
   var inSvg = active.svg.contains(ev.target);
   var handle = inSvg && ev.target.closest ? ev.target.closest('.ed-h') : null;
   if (handle) {
@@ -2289,6 +2311,7 @@ function edPointerDown(ev) {
 }
 function edPointerMove(ev) {
   if (ED && ED.band) { edBandMove(ev); return; }
+  if (ED && ED.drag && ED.drag.hier) { hierPointerMove(ev); return; }
   var dr = ED && ED.drag;
   if (!dr) return;
   if (!dr.started) {
@@ -2515,6 +2538,7 @@ function edPointerUp(ev) {
   var dr = ED && ED.drag;
   if (!dr) return;
   ED.drag = null;
+  if (dr.hier) { hierPointerUp(ev, dr); return; }
   if (dr.guides) dr.guides.remove();
   if (!dr.started) return;
   /* the browser may send one click right after the drag ends; only that click is ignored */
@@ -2759,6 +2783,7 @@ function edNudge(dx, dy) {
 }
 function edKey(ev) {
   if (!ED) return;
+  if (ED.aiPreview) { if (ev.key === 'Escape' && typeof aiReject === 'function') aiReject(); return; }
   /* was the last thing a click (Tab then autocompletes) or a key that moves the focus (Tab keeps moving it)? */
   var byPointer = ED.lastInput === 'pointer';
   if (ev.key === 'Tab' || ev.key === 'Enter' || ev.key === ' ') ED.lastInput = 'key';
@@ -2779,6 +2804,7 @@ function edKey(ev) {
   }
   if (mod && key === 'a') { ev.preventDefault(); edSetSelection(Object.keys(active.L.nodes)); return; }
   if (mod && key === 'd') { var dup = edSelIds(); if (dup.length) { ev.preventDefault(); edPasteClip(edCopyClip(dup)); } return; }
+  if (typeof hierKey === 'function' && hierKey(ev)) return;
   if (!ED.selected && !(ED.multi && ED.multi.length)) return;
   if (ev.key === 'Delete' || ev.key === 'Backspace') {
     ev.preventDefault();
@@ -2792,10 +2818,11 @@ function edKey(ev) {
   if (ev.key === 'Escape') { ED.selected = null; ED.multi = null; edMarkSelection(); }
 }
 function edCanvasClick(ev) {
-  if (!ED) return;
+  if (!ED || ED.aiPreview) return;
   if (ED.suppressClick && active && active.canvas && active.canvas.contains(ev.target)) { ED.suppressClick = false; ev.stopPropagation(); ev.preventDefault(); return; }
   if (!active || !active.svg || !active.svg.contains(ev.target)) return;
   if (ev.target.closest && ev.target.closest('.ed-h')) return;
+  if (typeof hierCanvasClick === 'function' && hierCanvasClick(ev)) return;
   var nodeEl = ev.target.closest ? ev.target.closest('.node') : null;
   var edgeEl = !nodeEl && ev.target.closest ? ev.target.closest('.edge') : null;
   /* while editing, a click selects; the reading view's focus and dimming stay off */
@@ -2814,6 +2841,7 @@ function edCanvasClick(ev) {
   edMarkSelection();
 }
 function edDblClick(ev) {
+  if (ED && ED.aiPreview) return;
   if (!ED || !active || !active.svg || !active.svg.contains(ev.target)) return;
   var h = ev.target.closest ? ev.target.closest('.ed-h') : null;
   if (h && /^wp-/.test(h.getAttribute('data-h')) && ED.selected && ED.selected.edge !== undefined) {
@@ -2822,6 +2850,7 @@ function edDblClick(ev) {
     return;
   }
   if (active.d.kind !== 'graph') return;
+  if (typeof hierDblClick === 'function' && hierDblClick(ev)) return;
   var nodeEl = ev.target.closest ? ev.target.closest('.node') : null;
   var edgeEl = !nodeEl && ev.target.closest ? ev.target.closest('.edge') : null;
   if (nodeEl) {

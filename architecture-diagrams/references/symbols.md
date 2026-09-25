@@ -61,6 +61,12 @@ Use a symbol with `"shape": "<name>"` (an alias works too). Pins are given as NA
 | `rom` | 100 × 76 | none |  |
 | `sync` | 84 × 48 | D (in) [0, 0.32], CLK (clk) [0, 0.78], Q (out) [1, 0.32] | cdc, synchronizer |
 | `clockgate` | 72 × 52 | EN (in) [0, 0.3], CLK (clk) [0, 0.74], GCLK (out) [1, 0.5] | clock-gate, icg |
+| `port-in` | 110 × 26 | EXT (in) [0, 0.5], INT (out) [1, 0.5] | inport |
+| `port-out` | 110 × 26 | INT (in) [0, 0.5], EXT (out) [1, 0.5] | outport |
+| `port-io` | 110 × 26 | EXT (io) [0, 0.5], INT (io) [1, 0.5] | ioport, port |
+| `port-in-v` | 96 × 34 | EXT (in) [0.5, 0], INT (out) [0.5, 1] |  |
+| `port-out-v` | 96 × 34 | INT (in) [0.5, 1], EXT (out) [0.5, 0] |  |
+| `port-io-v` | 96 × 34 | EXT (io) [0.5, 0], INT (io) [0.5, 1] |  |
 | `ic` | 96 × 72 | none | chip |
 
 ## Analog and mixed-signal

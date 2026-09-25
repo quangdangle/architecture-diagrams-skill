@@ -50,7 +50,7 @@ var AST = {
     yes: 'Yes', no: 'No', nBlock: 'New block', nState: 'New state', nDb: 'Database', nCache: 'Cache', nQueue: 'Queue', nApi: 'API gateway',
     nConsumer: 'Consumer', nReplica: 'Read replica', nClock: 'clk', nStep: 'New step', nEnd: 'End', nWeb: 'Web app', nBus: 'AXI interconnect',
     nBridge: 'AXI to APB bridge', nIrq: 'Interrupt controller', nCheck: 'Check?',
-    eBad: 'not an operation object', eUnknown: 'unknown operation “{x}”', eNode: 'needs a "node" object', eId: '“{x}” is not a valid id (letters, digits and _ . : - only)',
+    eBad: 'not an operation object', eThrew: 'could not be applied ({x})', eUnknown: 'unknown operation “{x}”', eNode: 'needs a "node" object', eId: '“{x}” is not a valid id (letters, digits and _ . : - only)',
     eDup: 'the id “{x}” is already used', eShape: 'unknown shape “{x}”', eNoNode: 'there is no block “{x}”', ePin: 'block “{x}” has no pin “{y}”; its pins are {z}',
     eNoPins: 'block “{x}” has no named pins', eGroup: 'there is no group “{x}”', eEdge: 'no connection matches', eRename: 'change an id with renameNode',
     eNoTab: 'there is no tab “{x}”', eNotGraph: 'tab “{x}” is not a block diagram', eNoPattern: 'there is no pattern “{x}”', eStep: 'there is no step #{x}',
@@ -102,7 +102,7 @@ var AST = {
     yes: 'Có', no: 'Không', nBlock: 'Khối mới', nState: 'Trạng thái mới', nDb: 'Cơ sở dữ liệu', nCache: 'Cache', nQueue: 'Hàng đợi', nApi: 'API gateway',
     nConsumer: 'Dịch vụ nhận tin', nReplica: 'Bản sao chỉ đọc', nClock: 'clk', nStep: 'Bước mới', nEnd: 'Kết thúc', nWeb: 'Ứng dụng web', nBus: 'Bus AXI',
     nBridge: 'Cầu AXI sang APB', nIrq: 'Bộ điều khiển ngắt', nCheck: 'Kiểm tra?',
-    eBad: 'không phải một thao tác', eUnknown: 'không có thao tác “{x}”', eNode: 'cần có đối tượng "node"', eId: '“{x}” không dùng làm mã được (chỉ chữ, số và _ . : -)',
+    eBad: 'không phải một thao tác', eThrew: 'không áp dụng được ({x})', eUnknown: 'không có thao tác “{x}”', eNode: 'cần có đối tượng "node"', eId: '“{x}” không dùng làm mã được (chỉ chữ, số và _ . : -)',
     eDup: 'mã “{x}” đã có khối khác dùng', eShape: 'không có hình “{x}”', eNoNode: 'không có khối “{x}”', ePin: 'khối “{x}” không có chân “{y}”; các chân là {z}',
     eNoPins: 'khối “{x}” không có chân mang tên', eGroup: 'không có nhóm “{x}”', eEdge: 'không có đường nối nào khớp', eRename: 'đổi mã bằng thao tác renameNode',
     eNoTab: 'không có tab “{x}”', eNotGraph: 'tab “{x}” không phải sơ đồ khối', eNoPattern: 'không có mẫu “{x}”', eStep: 'không có bước số {x}',
@@ -443,7 +443,7 @@ function asSetEnd(d, e, which, ref) {
   if (keep) e[which + 'Anchor'] = asAnchor(keep); else delete e[which + 'Anchor'];
   return null;
 }
-var AS_NODE_KEYS = ['title', 'desc', 'shape', 'icon', 'color', 'size', 'group', 'external', 'width', 'ports', 'initial', 'final', 'x', 'y', 'w', 'h', 'style', 'labelPos', 'src'];
+var AS_NODE_KEYS = ['title', 'desc', 'shape', 'icon', 'color', 'size', 'group', 'external', 'width', 'ports', 'initial', 'final', 'x', 'y', 'w', 'h', 'style', 'labelPos', 'src', 'port', 'detail'];
 var AS_EDGE_KEYS = ['label', 'kind', 'dir', 'route', 'points', 'style', 'labelAt', 'labelOffset', 'labelDist', 'minlen', 'weight', 'elbow'];
 var AS_OPS = {
   addNode: function (d, op, touched) {
@@ -489,6 +489,7 @@ var AS_OPS = {
   removeNode: function (d, op) {
     var id = str(op.id);
     if (!asNodes(d)[id]) return asl('eNoNode', id);
+    if (typeof hierDetachNotes === 'function') hierDetachNotes(d, id);
     d.nodes = d.nodes.filter(function (n) { return !n || str(n.id) !== id; });
     d.edges = (d.edges || []).filter(function (e) { return e && str(e.from) !== id && str(e.to) !== id; });
     d.steps = (d.steps || []).filter(function (s) { return s && str(s.node) !== id && !(Array.isArray(s.edge) && (str(s.edge[0]) === id || str(s.edge[1]) === id)); });
@@ -509,6 +510,7 @@ var AS_OPS = {
     var n = asNodes(d)[str(op.id)];
     if (!n) return asl('eNoNode', str(op.id));
     asRenameRefs(d, str(n.id), to);
+    if (AS_DOC && typeof hierRenameRefs === 'function') hierRenameRefs(AS_DOC, d, str(n.id), to);
     n.id = to;
     touched.push(to);
     return null;
@@ -567,7 +569,7 @@ var AS_OPS = {
     if (asGroupIds(d)[id]) return asl('eDup', id);
     if (edHas(g.parent) && !asGroupIds(d)[str(g.parent)]) return asl('eGroup', str(g.parent));
     var c = { id: id };
-    ['label', 'color', 'parent', 'icon', 'hidden', 'style'].forEach(function (k) { if (g[k] !== undefined && g[k] !== null && g[k] !== '') c[k] = k === 'label' ? asText(g[k]) : edClone(g[k]); });
+    ['label', 'color', 'parent', 'icon', 'hidden', 'style', 'x', 'y', 'w', 'h', 'source', 'detail'].forEach(function (k) { if (g[k] !== undefined && g[k] !== null && g[k] !== '') c[k] = k === 'label' ? asText(g[k]) : edClone(g[k]); });
     d.groups = Array.isArray(d.groups) ? d.groups : [];
     d.groups.push(c);
     return null;
@@ -582,7 +584,7 @@ var AS_OPS = {
       if (!groups[pid]) return asl('eGroup', pid);
       for (var up = pid; up && hops < 50; hops++) { if (up === str(op.id)) return asl('eGroup', pid); up = groups[up] && groups[up].parent ? str(groups[up].parent) : null; }
     }
-    ['label', 'color', 'parent', 'icon', 'hidden', 'x', 'y', 'w', 'h'].forEach(function (k) {
+    ['label', 'color', 'parent', 'icon', 'hidden', 'x', 'y', 'w', 'h', 'source', 'detail'].forEach(function (k) {
       if (!(k in set)) return;
       if (set[k] === null || set[k] === '') delete g[k]; else g[k] = k === 'label' ? asText(set[k]) : edClone(set[k]);
     });
@@ -605,10 +607,11 @@ var AS_OPS = {
   }
 };
 /* Applies ops to a copy of the document. Nothing changes when one op fails; the errors say which and why. */
-var AS_ST = null;
+var AS_ST = null, AS_DOC = null;
 function asApplyOps(raw, di, ops, st) {
   var doc = edClone(raw), d = doc.diagrams[di], errors = [], touched = [];
   AS_ST = st || null;
+  AS_DOC = doc;
   if (!d) return { raw: raw, errors: [asl('eNoTab', di)], touched: [] };
   if (edTypeOf(d) !== 'graph') { AS_ST = null; return { raw: raw, errors: [asl('eNotGraph', str(d.title) || str(d.id) || di + 1)], touched: [] }; }
   if (ops && !Array.isArray(ops) && Array.isArray(ops.ops)) ops = ops.ops;
@@ -617,10 +620,13 @@ function asApplyOps(raw, di, ops, st) {
     var fail = function (msg) { errors.push('#' + (k + 1) + (name ? ' ' + name : '') + ': ' + msg); };
     if (!name) { fail(at('eBad')); return; }
     if (!AS_OPS.hasOwnProperty(name)) { fail(asl('eUnknown', name)); return; }
-    var msg = AS_OPS[name](d, op, touched);
+    var msg;
+    /* an operation that throws (a bug, or an answer from an AI shaped in a way no check caught) fails like any other */
+    try { msg = AS_OPS[name](d, op, touched); } catch (err) { msg = asl('eThrew', String(err && err.message || err)); }
     if (msg) fail(msg);
   });
   AS_ST = null;
+  AS_DOC = null;
   return { raw: errors.length ? raw : doc, errors: errors, touched: touched };
 }
 /* Hand-placed positions from the automatic layout, as the editor does before a drag (edFreeze). */
@@ -1225,7 +1231,8 @@ function asHeals(d) {
 /* ---------- suggestions for one block ---------- */
 function asSuggest(raw, di, st, id, memo) {
   var M = memo || asMemo(raw, di, st), d = M.d, nodes = M.nodes, n = nodes[id], out = [];
-  if (!n) return out;
+  /* a port of a frame or of a block's inside tab: what it connects to inside is for the engineer (or the AI) to draw */
+  if (!n || (n.port && typeof n.port === 'object')) return out;
   var shape = normShape(n.shape), used = M.used, name = asName(n), manual = asManual(d), cf = M.cf, ctx = M.ctx;
   var boxes = M.boxes, byId = M.byId, pos = M.pos;
   var dist = function (a) { var p = pos[a], q = pos[id]; return p && q ? Math.hypot(p.x - q.x, p.y - q.y) : 1e6; };
@@ -1720,6 +1727,7 @@ function edInsertPattern(pid, clock, fresh) {
   edHoldStatus(asl('patInserted', asText(pat.title)) + (r.notes.length ? ' ' + r.notes[0] : ''));
 }
 function edFixesFor(it) {
+  if (it.hfix) return it.hfix;
   var d = edDiagram();
   if (!d || edTypeOf(d) !== 'graph' || (!it.w && !it.q)) return [];
   var st = edStateFor(d);
@@ -1801,7 +1809,8 @@ function edRefreshSuggest() {
   box.hidden = true;
   ED.sgList = [];
   var d = edDiagram();
-  if (!d || edTypeOf(d) !== 'graph' || !(d.nodes || []).length || (ED.multi && ED.multi.length > 1)) return;
+  if (!d || edTypeOf(d) !== 'graph' || !(d.nodes || []).length) return;
+  if ((ED.multi && ED.multi.length > 1) || (ED.gsel && ED.gsel.length)) { if (typeof hierNoteBox === 'function') hierNoteBox(box); return; }
   var st = edStateFor(d), memo = asMemo(ED.raw, ED.diag, st), nodes = asNodes(d);
   var sel = ED.selected && ED.selected.id !== undefined && nodes[str(ED.selected.id)] ? str(ED.selected.id) : null;
   var list = sel ? asSuggest(ED.raw, ED.diag, st, sel, memo).map(function (x) { x.node = sel; return x; }) : [];
@@ -1811,7 +1820,7 @@ function edRefreshSuggest() {
     list = asNextSteps(ED.raw, ED.diag, st, memo);
     if (sel) head = asl('sgNoneNext', asName(nodes[sel]));
   }
-  if (!list.length) return;
+  if (!list.length) { if (typeof hierNoteBox === 'function') hierNoteBox(box); return; }
   box.hidden = false;
   var off = edGhostOff();
   var tg = H('button', { type: 'button', class: 'ed-mini ed-sg-ghost', title: at('ghToggle'), 'aria-pressed': off ? 'false' : 'true', text: off ? at('ghOff') : at('ghOn') });
@@ -1827,6 +1836,7 @@ function edRefreshSuggest() {
   box.appendChild(wrap);
   if (!sel) box.appendChild(H('p', { class: 'ed-note', text: at('nsHint') }));
   ED.sgList = list;
+  if (typeof hierNoteBox === 'function') hierNoteBox(box);
 }
 /* A suggestion from the list, the keys 1 to 8 or the next steps: on the block it is for. */
 function edApplySuggestion(x) {
@@ -1890,7 +1900,13 @@ function asChecks(raw, di) {
   var d = raw.diagrams[di], st = asStateOf(raw, di), out = [];
   edValidate(d).forEach(function (q) { out.push({ text: q.where + ' · ' + q.field + ': ' + q.text, fixes: asFieldFixes(raw, di, st, q) }); });
   if (st && st.L) wiringChecks(st.d, st.L).forEach(function (w) { out.push({ text: w.text, fixes: asWireFixes(raw, di, st, w) }); });
-  return out.map(function (c) { return { text: c.text, fixes: c.fixes.map(function (f) { return { label: f.label, safe: !!f.safe, ops: f.ops }; }) }; });
+  /* detail boards and inside tabs out of step, open ports, port names (hier.js); "soft" ones are advice, not errors */
+  if (typeof hierIssues === 'function') hierIssues(raw, di).forEach(function (q) { out.push({ text: q.text, soft: !!q.soft, fixes: q.fixes || [] }); });
+  return out.map(function (c) {
+    var o = { text: c.text, fixes: c.fixes.map(function (f) { return { label: f.label, safe: !!f.safe, ops: f.ops }; }) };
+    if (c.soft) o.soft = true;
+    return o;
+  });
 }
 function runCliAssist() {
   var done = function (o) { document.documentElement.setAttribute('data-export', encodeURIComponent(JSON.stringify(o))); };
@@ -1912,6 +1928,24 @@ function runCliAssist() {
       notes = r.notes;
       result.added = r.select;
     } else if (cmd.action === 'applyOps') ops = cmd.ops;
+    else if (cmd.action === 'board' || cmd.action === 'inside') {
+      /* a detail board of the tab, or the inside of one of its blocks or frames in a tab of its own (hier.js) */
+      var made = cmd.action === 'board' ? hierBuildBoard(raw, di) : hierOpenInside(raw, di, str(cmd.block));
+      if (made.error) { done({ error: made.error === 'block' ? asl('eNoNode', cmd.block) : asl('eNotGraph', cmd.diagram || tab) }); return; }
+      raw = made.raw;
+      hierSync(raw, made.index);
+      currentRaw = raw;
+      renderSpec(raw, true);
+      result[cmd.action === 'board' ? 'board' : 'inside'] = hierTabId(raw.diagrams[made.index], made.index);
+      result.existed = !!made.existed;
+      result.tab = hierTabId(raw.diagrams[made.index], made.index);
+      result.spec = raw;
+      result.checks = asChecks(raw, made.index);
+      /* wires of a new board that run through a frame, over another frame's port or along another wire */
+      if (cmd.action === 'board' && !made.existed) { var tg = hierTangles(raw.diagrams[made.index]); if (tg) result.tangles = tg.total; }
+      done(result);
+      return;
+    }
     else if (cmd.action !== 'suggest') { done({ error: asl('eUnknown', cmd.action) }); return; }
     if (ops) {
       var res = asApplyOps(raw, di, ops, st);

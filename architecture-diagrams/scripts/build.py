@@ -29,7 +29,7 @@ from validate import validate_spec  # noqa: E402
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE = SKILL_DIR / "assets" / "template.html"
 JS_DIR = SKILL_DIR / "assets" / "js"
-JS_ORDER = ("renderer.js", "icons.js", "symbols.js", "stencils.js", "drawio.js", "editor.js", "assist.js", "boot.js")
+JS_ORDER = ("renderer.js", "icons.js", "symbols.js", "stencils.js", "drawio.js", "editor.js", "assist.js", "hier.js", "ai.js", "boot.js")
 PATTERNS_FILE = SKILL_DIR / "assets" / "patterns.json"
 STENCIL_DIR = SKILL_DIR / "assets" / "stencils"
 VENDORED_DAGRE = SKILL_DIR / "assets" / "vendor" / "dagre.min.js"

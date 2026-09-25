@@ -108,6 +108,15 @@ TOOLS = [
      "description": "What the editor would suggest: every problem on a block-diagram tab (reversed wires, missing clocks, stacked blocks, unknown shapes…) with ready-to-apply fixes as operations, likely next blocks for each block or for one block (node), and without node the next steps for the whole tab (up to five, most useful first).",
      "inputSchema": {"type": "object", "properties": dict(SPEC_OR_PATH, node={"type": "string", "description": "Only suggestions for this block."},
                                                           diagram={"type": "string", "description": "Tab id (default: the first block-diagram tab)."})}},
+    {"name": "diagram_build_board",
+     "description": "Build the detail board of an overview tab: a new hand-placed tab where every block is a frame with named ports on its border and every connection is a wire between two ports. Engineers then draw the inside of each block in its frame; the board follows the overview when blocks or connections are added or renamed.",
+     "inputSchema": {"type": "object", "properties": dict(SPEC_OR_PATH, diagram={"type": "string", "description": "Tab id of the overview (default: the first block-diagram tab)."},
+                                                          output={"type": "string", "description": "Where to write the changed spec (.json)."})}},
+    {"name": "diagram_open_inside",
+     "description": "Move what is inside a block (or a frame of a detail board) to a tab of its own. The block keeps its ports and links to the new tab; the tab gets the same ports on its border, and both stay in step.",
+     "inputSchema": {"type": "object", "required": ["block"], "properties": dict(SPEC_OR_PATH, block={"type": "string", "description": "Id of the block or frame."},
+                                                                             diagram={"type": "string", "description": "Tab id that holds the block (default: the first block-diagram tab)."},
+                                                                             output={"type": "string", "description": "Where to write the changed spec (.json)."})}},
 ]
 RESOURCES = [
     {"uri": "architecture-diagrams://guide", "name": "Spec format and symbols", "mimeType": "text/markdown",
@@ -386,10 +395,29 @@ def tool_suggest(args):
                                      "truncated": bool(result.get("truncated"))}
 
 
+def tool_build_board(args):
+    source, spec = assist_input(args)
+    try:
+        result = assist.build_board(spec, args.get("diagram"))
+    except assist.AssistError as exc:
+        raise ToolError(str(exc))
+    return edited(args, source, result)
+
+
+def tool_open_inside(args):
+    source, spec = assist_input(args)
+    try:
+        result = assist.open_inside(spec, str(args.get("block") or ""), args.get("diagram"))
+    except assist.AssistError as exc:
+        raise ToolError(str(exc))
+    return edited(args, source, result)
+
+
 HANDLERS = {"diagram_guide": tool_guide, "diagram_validate": tool_validate, "diagram_build": tool_build,
             "diagram_open_editor": tool_open_editor, "diagram_export": tool_export, "diagram_import_drawio": tool_import_drawio,
             "diagram_scan_code": tool_scan_code, "diagram_symbols": tool_symbols, "diagram_patterns": tool_patterns,
-            "diagram_insert_pattern": tool_insert_pattern, "diagram_apply_ops": tool_apply_ops, "diagram_suggest": tool_suggest}
+            "diagram_insert_pattern": tool_insert_pattern, "diagram_apply_ops": tool_apply_ops, "diagram_suggest": tool_suggest,
+            "diagram_build_board": tool_build_board, "diagram_open_inside": tool_open_inside}
 
 
 def read_resource(uri):

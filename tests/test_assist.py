@@ -280,3 +280,82 @@ class InBrowser(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DetailBoards(unittest.TestCase):
+    """Detail boards, inside tabs and port names (assets/js/hier.js), through the same headless page as the other commands."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not find_browser():
+            raise unittest.SkipTest("needs Chrome, Chromium, Edge or Brave")
+
+    def test_board_wires_stay_clear_of_other_frames(self):
+        for name in ("soc-block-diagram.json", "clock-reset-tree.json", "web-app-icons.json"):
+            spec = json.loads((SKILL / "examples" / name).read_text(encoding="utf-8"))
+            result = assist.build_board(spec)
+            with self.subTest(example=name):
+                self.assertEqual(result.get("tangles"), 0, name)
+                board = [d for d in result["spec"]["diagrams"] if d.get("boardOf")][0]
+                frames = [g for g in board["groups"] if g.get("source")]
+                overview = [d for d in result["spec"]["diagrams"] if d.get("id") == board["boardOf"]][0]
+                self.assertEqual(len(frames), len(overview["nodes"]))
+                self.assertEqual(len(board["edges"]), len(overview.get("edges") or []))
+
+    def test_bus_interfaces_keep_their_names_and_other_names_get_a_fix(self):
+        spec = json.loads((SKILL / "examples" / "soc-block-diagram.json").read_text(encoding="utf-8"))
+        tab = spec["diagrams"][0]
+        card = [n for n in tab["nodes"] if "s_axi_cpu" in json.dumps(n.get("ports", {}))][0]
+        card["ports"]["in"].append("DataReady")
+        result = assist.suggest(spec)
+        naming = [c for c in result["checks"] if "DataReady" in c["text"]]
+        self.assertEqual(len(naming), 1, [c["text"] for c in result["checks"]])
+        self.assertTrue(naming[0].get("soft"))
+        self.assertNotIn("s_axi_cpu", naming[0]["text"])
+        fixed = assist.apply_ops(spec, naming[0]["fixes"][0]["ops"], diagram=tab["id"])
+        ports = [n for n in fixed["spec"]["diagrams"][0]["nodes"] if n["id"] == card["id"]][0]["ports"]
+        self.assertIn("i_data_ready", ports["in"])
+        self.assertIn("s_axi_cpu", ports["in"])
+        self.assertIn("m_apb", ports["out"])
+
+    def test_a_block_added_to_an_ordinary_group_keeps_its_place(self):
+        spec = {"title": "t", "diagrams": [{"id": "m", "title": "m", "layout": "manual",
+                "groups": [{"id": "g", "label": "G", "x": 0, "y": 0, "w": 300, "h": 200}],
+                "nodes": [{"id": "a", "title": "A", "group": "g", "x": 40, "y": 60}]}]}
+        result = assist.apply_ops(spec, [{"op": "addNode", "node": {"id": "b", "title": "B", "group": "g", "x": 500, "y": 400}}], diagram="m")
+        b = [n for n in result["spec"]["diagrams"][0]["nodes"] if n["id"] == "b"][0]
+        g = result["spec"]["diagrams"][0]["groups"][0]
+        self.assertEqual((b["x"], b["y"]), (500, 400))
+        self.assertEqual((g["w"], g["h"]), (300, 200))
+
+    def test_a_block_added_to_a_board_frame_lands_inside_it(self):
+        spec = json.loads((SKILL / "examples" / "soc-block-diagram.json").read_text(encoding="utf-8"))
+        board = assist.build_board(spec)
+        tab = board["board"]
+        result = assist.apply_ops(board["spec"], [{"op": "addNode", "node": {"id": "u_fifo", "title": "u_fifo", "shape": "fifo", "group": "uart", "x": 0, "y": 0}}], diagram=tab)
+        d = [x for x in result["spec"]["diagrams"] if x.get("id") == tab][0]
+        n = [x for x in d["nodes"] if x["id"] == "u_fifo"][0]
+        f = [g for g in d["groups"] if g["id"] == "uart"][0]
+        self.assertTrue(f["x"] < n["x"] < f["x"] + f["w"] and f["y"] < n["y"] < f["y"] + f["h"], (n, f))
+
+    def test_inputs_with_the_same_name_get_one_port_each(self):
+        spec = {"title": "t", "diagrams": [{"id": "soc", "title": "SoC", "nodes": [
+            {"id": "uart", "title": "UART"}, {"id": "gpio", "title": "GPIO"}, {"id": "plic", "title": "PLIC"}],
+            "edges": [{"from": "uart", "to": "plic", "label": "IRQ"}, {"from": "gpio", "to": "plic", "label": "IRQ"}]}]}
+        result = assist.build_board(spec)
+        board = [d for d in result["spec"]["diagrams"] if d.get("boardOf")][0]
+        names = sorted(n["port"]["name"] for n in board["nodes"] if n.get("port", {}).get("of") == "plic")
+        self.assertEqual(names, ["i_irq_gpio", "i_irq_uart"])
+        self.assertFalse([c for c in result["checks"] if "receives" in c["text"]], result["checks"])
+
+    def test_inside_tab_gets_the_frame_ports(self):
+        spec = json.loads((SKILL / "examples" / "soc-block-diagram.json").read_text(encoding="utf-8"))
+        board = assist.build_board(spec)
+        inside = assist.open_inside(board["spec"], "uart", diagram=board["board"])
+        tabs = {d.get("id"): d for d in inside["spec"]["diagrams"]}
+        frame_ports = sorted(n["id"] for n in tabs[board["board"]]["nodes"] if n.get("port", {}).get("of") == "uart")
+        tab_ports = sorted(n["id"] for n in tabs[inside["inside"]]["nodes"] if n.get("port"))
+        self.assertTrue(frame_ports)
+        self.assertEqual(frame_ports, tab_ports)
+        self.assertEqual(tabs[inside["inside"]]["detailOf"], {"tab": board["board"], "block": "uart"})
+

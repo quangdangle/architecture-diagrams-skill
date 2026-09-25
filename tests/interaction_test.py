@@ -11,9 +11,12 @@
 5. Quick fixes, patterns and suggestions: fix buttons in Checks, fixing every safe problem at once, inserting
    each pattern (wired to the selected block's pins) and the suggestions for the selected block.
 6. The symbol library: every symbol draws, exports to draw.io stencils, and builds a draw.io library.
+7. Detail boards: an overview becomes a board of frames with ports and wires that follow the overview.
+8. Sticky notes, a block's inside in its own tab, port names and the AI flow (with a stand-in for the bridge),
+   then a draw.io round trip that keeps notes, ports and the links between tabs.
 
 Usage:
-    python3 tests/interaction_test.py [examples|editor|checks|multi|edge|drawio|manip|assist|symbols ...]
+    python3 tests/interaction_test.py [examples|editor|checks|multi|edge|drawio|manip|assist|grow|symbols|board|notesai ...]
 
 Needs Chrome, Chromium, Edge or Brave (same lookup as scripts/render_png.py).
 Exit code: 0 = all checks passed, 1 = a check failed, 2 = no browser found.
@@ -258,7 +261,7 @@ CHECKS_JS = r"""
     function pick(id) { svg().querySelector('.node[data-id="' + id + '"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); return wait(300); }
 
     ok('a clean diagram reports no problems', /✓/.test(document.querySelector('.ed-checks').textContent), document.querySelector('.ed-checks').textContent);
-    ok('the form is split into sub-tabs with one pane showing', document.querySelectorAll('.ed-stab').length === 6 && document.querySelectorAll('.ed-pane:not([hidden])').length === 1);
+    ok('the form is split into sub-tabs with one pane showing', document.querySelectorAll('.ed-stab').length === 7 && document.querySelectorAll('.ed-pane:not([hidden])').length === 1);
     ok('required columns are marked', document.querySelectorAll('.ed-pane:not([hidden]) .ed-tbl th.ed-req').length >= 1);
     document.querySelector('.ed-row[data-key="n:ffa"]').moreToggle(true);
     await wait(250);
@@ -975,6 +978,205 @@ GROW_JS = r"""
     ok('no script errors while testing', !window.__testErrors.length, window.__testErrors.slice(0, 3).join('; '));
 """
 
+BOARD_JS = r"""
+    for (var i = 0; i < 60 && !svg(); i++) await wait(100);
+    document.getElementById('edit-btn').click();
+    for (var i = 0; i < 60 && !document.querySelector('.ed-hier-btn'); i++) await wait(100);
+    var btn = document.querySelector('.ed-hier-btn');
+    ok('the overview offers a detail board', !!btn, btn && btn.textContent);
+    btn.click();
+    await wait(900);
+    var raw = window.__adEditor.raw(), B = raw.diagrams[window.__adEditor.tab()];
+    ok('the board is a new hand-placed tab linked to the overview', B && B.boardOf === raw.diagrams[0].id && B.layout === 'manual', B && B.id);
+    var frames = (B.groups || []).filter(function (g) { return g.source; }), ports = (B.nodes || []).filter(function (n) { return n.port; });
+    ok('every block of the overview became a frame', frames.length === raw.diagrams[0].nodes.length, frames.length);
+    ok('frames carry the ports of their connections', ports.length >= 14 && ports.every(function (n) { return n.port.of && frames.some(function (f) { return f.id === n.port.of; }); }), ports.length);
+    ok('every connection became a wire between two ports', (B.edges || []).length === raw.diagrams[0].edges.length && B.edges.every(function (e) { return e.source && e.fromAnchor && e.toAnchor; }), (B.edges || []).length);
+    ok('frames, ports and hints are drawn', svg().querySelectorAll('.group.frame').length === frames.length && svg().querySelectorAll('.node[data-shape^="port-"]').length === ports.length && svg().querySelectorAll('.frame-hint').length === frames.length);
+    var overlap = 0;
+    frames.forEach(function (p, a) { frames.forEach(function (q, b) { if (b > a && p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h) overlap++; }); });
+    ok('frames keep the overview arrangement without overlapping', overlap === 0, overlap);
+    ok('ports sit on all four sides where the neighbours are', ['port-in', 'port-out', 'port-in-v', 'port-out-v'].filter(function (sh) { return ports.some(function (n) { return n.shape === sh; }); }).length >= 3);
+    ok('the board links back to its overview', /↰/.test(visible('.crumbs') ? visible('.crumbs').textContent : ''), visible('.crumbs') && visible('.crumbs').textContent);
+    var items = Array.prototype.map.call(document.querySelectorAll('.ed-checks .ed-chk-item'), function (x) { return x.textContent; });
+    ok('a fresh board has no wiring problems, only port names to tidy', items.every(function (x) { return /^(Port|Cổng) «/.test(x); }), items.slice(0, 3).join(' | '));
+    document.querySelector('.ed-hier-btn').click();
+    await wait(700);
+    ok('back to the overview', window.__adEditor.tab() === 0);
+    var first = raw.diagrams[0].nodes[0].id;
+    window.__adEditor.ops([{ op: 'addNode', node: { id: 'npu2', title: 'NPU 2', color: 'violet' } }, { op: 'connect', from: 'npu2', to: first, label: 'AXI' }], 'add');
+    await wait(900);
+    raw = window.__adEditor.raw(); B = raw.diagrams.filter(function (d) { return d.boardOf; })[0];
+    ok('a new block gets its frame on the board', (B.groups || []).some(function (g) { return g.source === 'npu2'; }));
+    ok('a new connection gets its ports and wire', (B.edges || []).some(function (e) { return /^npu2>/.test(e.source); }));
+    window.__adEditor.ops([{ op: 'renameNode', id: 'npu2', to: 'npu_b' }], 'rename');
+    await wait(900);
+    raw = window.__adEditor.raw(); B = raw.diagrams.filter(function (d) { return d.boardOf; })[0];
+    ok('renaming a block keeps its frame', (B.groups || []).some(function (g) { return g.source === 'npu_b'; }) && !(B.groups || []).some(function (g) { return g.source === 'npu2'; }));
+    ok('and its wire, with no second wire into the port', (B.edges || []).filter(function (e) { return /^npu_b>/.test(e.source); }).length === 1 && !(B.edges || []).some(function (e) { return /^npu2>/.test(e.source); }),
+       JSON.stringify((B.edges || []).map(function (e) { return e.source; }).filter(function (k) { return /npu/.test(k); })));
+    var ovE = raw.diagrams[0].edges.map(function (e, k) { return { e: e, k: k }; }).filter(function (q) { return q.e.from === 'npu_b'; })[0];
+    window.__adEditor.ops([{ op: 'updateEdge', edge: ovE.k, set: { label: 'AXI4' } }], 'relabel');
+    await wait(900);
+    raw = window.__adEditor.raw(); B = raw.diagrams.filter(function (d) { return d.boardOf; })[0];
+    ok('a relabelled connection keeps its wire', (B.edges || []).filter(function (e) { return /^npu_b>/.test(e.source); }).length === 1 && (B.edges || []).some(function (e) { return /^npu_b>.*:AXI4$/.test(e.source) && e.label === 'AXI4'; }),
+       JSON.stringify((B.edges || []).map(function (e) { return e.source; }).filter(function (k) { return /npu/.test(k); })));
+    window.__adEditor.ops([{ op: 'removeNode', id: 'npu_b' }], 'remove');
+    await wait(900);
+    document.querySelector('.ed-hier-btn').click();
+    await wait(900);
+    raw = window.__adEditor.raw(); B = raw.diagrams[window.__adEditor.tab()];
+    ok('removing a block leaves the drawn frame alone', (B.groups || []).some(function (g) { return g.source === 'npu_b'; }));
+    ok('and the Checks list says it is gone', /npu_b/.test(document.querySelector('.ed-checks').textContent), document.querySelector('.ed-checks').textContent.slice(0, 240));
+    ok('no script errors while testing', !window.__testErrors.length, window.__testErrors.join(' | '));
+"""
+
+NOTES_AI_JS = r"""
+    var asked = [], realFetch = window.fetch;
+    window.fetch = function (url, opts) {
+      if (String(url).indexOf('http://127.0.0.1:') === 0) {
+        var path = String(url).replace(/^http:\/\/127\.0\.0\.1:\d+/, '');
+        if (path === '/health') return Promise.resolve(new Response(JSON.stringify({ ok: true, paired: true, claude: '2.1.233', busy: false }), { status: 200 }));
+        var body = JSON.parse(opts.body);
+        asked.push(body);
+        /* first answer: a FIFO inside the frame placed outside it, and a wire to a pin that does not exist; the page asks again */
+        var data = asked.length === 1 ? { ops: [{ op: 'addNode', node: { id: 'u_fifo_rx', title: 'u_fifo_rx', shape: 'fifo', group: 'uart', x: 0, y: 0 } }, { op: 'connect', from: 'u_fifo_rx.NOPE', to: 'u_fifo_rx.IN' }], note: 'x' }
+                 : asked.length === 2 ? { ops: [{ op: 'addNode', node: { id: 'u_fifo_rx', title: 'u_fifo_rx', shape: 'fifo', group: 'uart', x: 0, y: 0 } }], note: 'Đã thêm FIFO nhận u_fifo_rx vào khung UART.' }
+                 : { ops: [{ op: 'addNode', node: { id: 'u_baud', title: 'u_baud', group: 'uart', x: 0, y: 0 } }], note: 'Đã thêm bộ tạo baud u_baud.' };
+        var reply = new Response(JSON.stringify({ ok: true, data: data, model: 'claude-sonnet-5', ms: 800 }), { status: 200 });
+        return asked.length >= 3 ? new Promise(function (r) { setTimeout(function () { r(reply); }, 1200); }) : Promise.resolve(reply);
+      }
+      return realFetch.apply(this, arguments);
+    };
+    for (var i = 0; i < 60 && !svg(); i++) await wait(100);
+    document.getElementById('edit-btn').click();
+    for (var i = 0; i < 60 && !document.querySelector('.ed-hier-btn'); i++) await wait(100);
+    document.querySelector('.ed-hier-btn').click();
+    await wait(900);
+    window.__adEditor.select([], ['uart']);
+    await wait(300);
+    var bar = document.querySelector('.ed-actbar');
+    ok('a selected frame shows AI, note and inside actions', !!bar && bar.querySelectorAll('button').length >= 3, bar && bar.textContent);
+    ok('notes are suggested from the diagram', document.querySelectorAll('.ed-sg-note').length > 0, document.querySelectorAll('.ed-sg-note').length);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true }));
+    await wait(400);
+    var ta = document.querySelector('.ed-note-edit');
+    ok('N opens a note on the selected frame', !!ta);
+    if (ta) { ta.value = 'FIFO nhận sâu 16 byte.'; ta.dispatchEvent(new Event('blur')); }
+    await wait(700);
+    var raw = window.__adEditor.raw(), B = raw.diagrams[window.__adEditor.tab()];
+    ok('the note is saved with the frame it is about', (B.notes || []).some(function (q) { return q.attach === 'uart' && /FIFO/.test(q.text) && q.date; }), JSON.stringify(B.notes));
+    ok('the note is drawn', svg().querySelectorAll('.note-sticky').length === (B.notes || []).length);
+    window.__adEditor.select([], ['uart']);
+    await wait(300);
+    document.querySelector('.ed-actbar .ed-bb-ai').click();
+    await wait(300);
+    var box = document.querySelector('.ai-box');
+    ok('the AI box opens next to the frame', !!box && /UART/.test(box.textContent));
+    box.querySelector('textarea').value = 'Thêm FIFO nhận vào khung này';
+    box.querySelector('.ai-send').click();
+    for (var i = 0; i < 50 && !document.querySelector('.ai-bar'); i++) await wait(100);
+    var pbar = document.querySelector('.ai-bar');
+    ok('an answer that fails is sent back once, then the change is shown first', !!pbar && asked.length === 2 && /Errors/.test(asked[1].prompt), asked.length + ' asks');
+    ok('the request carries the selection and the naming rule', /"selected":\["uart"\]/.test(asked[0].prompt) && /snake_case/.test(asked[0].system));
+    ok('the change is outlined before it is applied', svg().querySelectorAll('.ai-overlay rect').length >= 1);
+    ok('nothing is applied before Apply', !window.__adEditor.raw().diagrams[window.__adEditor.tab()].nodes.some(function (n) { return n.id === 'u_fifo_rx'; }));
+    pbar.querySelector('.ai-accept').click();
+    await wait(900);
+    raw = window.__adEditor.raw(); B = raw.diagrams[window.__adEditor.tab()];
+    var fifo = (B.nodes || []).filter(function (n) { return n.id === 'u_fifo_rx'; })[0], fr = (B.groups || []).filter(function (g) { return g.id === 'uart'; })[0];
+    ok('Apply adds the block inside the frame', fifo && fifo.group === 'uart' && fifo.x >= fr.x && fifo.y >= fr.y && fifo.x < fr.x + fr.w && fifo.y < fr.y + fr.h, JSON.stringify(fifo) + ' in ' + JSON.stringify(fr));
+    ok('the AI writes a note about what it did', (B.notes || []).some(function (q) { return q.by === 'AI' && /u_fifo_rx/.test(q.text); }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+    await wait(600);
+    ok('one undo takes the whole AI change back', !window.__adEditor.raw().diagrams[window.__adEditor.tab()].nodes.some(function (n) { return n.id === 'u_fifo_rx'; }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, shiftKey: true, bubbles: true }));
+    await wait(600);
+    window.__adEditor.select([], ['uart']);
+    await wait(300);
+    document.querySelector('.ed-actbar .ed-bb-ai').click();
+    await wait(300);
+    box = document.querySelector('.ai-box');
+    box.querySelector('textarea').value = 'Thêm bộ tạo baud';
+    var n0 = asked.length;
+    box.querySelector('.ai-send').click();
+    box.querySelector('.ai-send').click();
+    box.querySelector('textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    await wait(150);
+    window.__adEditor.ops([{ op: 'addNote', note: { text: 'Ghi chú viết trong lúc AI làm', attach: 'gpio' } }], 'meanwhile');
+    for (var i = 0; i < 60 && !document.querySelector('.ai-bar'); i++) await wait(100);
+    ok('one request at a time: clicking again sends nothing', asked.length === n0 + 1, (asked.length - n0) + ' sent');
+    window.__adEditor.ops([{ op: 'addNote', note: { text: 'Ghi chú viết khi đang xem đề xuất', attach: 'gpio' } }], 'during preview');
+    await wait(300);
+    document.querySelector('.ai-bar .ai-accept').click();
+    await wait(900);
+    B = window.__adEditor.raw().diagrams[window.__adEditor.tab()];
+    ok('what was edited while the AI worked is kept when its change is applied', (B.nodes || []).some(function (n) { return n.id === 'u_baud'; }) &&
+       (B.notes || []).some(function (q) { return /trong lúc AI làm/.test(q.text); }) && (B.notes || []).some(function (q) { return /khi đang xem/.test(q.text); }),
+       JSON.stringify((B.notes || []).map(function (q) { return q.text.slice(0, 30); })));
+    window.__adEditor.select([], ['uart']);
+    await wait(300);
+    var inside = Array.prototype.filter.call(document.querySelectorAll('.ed-actbar .ed-bb'), function (b) { return /▸/.test(b.textContent); })[0];
+    inside.click();
+    await wait(900);
+    raw = window.__adEditor.raw();
+    var D = raw.diagrams[window.__adEditor.tab()], board = raw.diagrams.filter(function (d) { return d.boardOf; })[0];
+    fr = (board.groups || []).filter(function (g) { return g.id === 'uart'; })[0];
+    ok('the inside of a frame moves to its own tab', D.detailOf && D.detailOf.block === 'uart' && fr.detail === D.id, D.id);
+    ok('what was drawn inside moves along', (D.nodes || []).some(function (n) { return n.id === 'u_fifo_rx'; }) && !(board.nodes || []).some(function (n) { return n.id === 'u_fifo_rx'; }));
+    var fports = (board.nodes || []).filter(function (n) { return n.port && n.port.of === 'uart'; }), dports = (D.nodes || []).filter(function (n) { return n.port; });
+    ok('the tab has the frame ports on its border', fports.length === dports.length && fports.every(function (f) { return dports.some(function (x) { return x.id === f.id; }); }));
+    var p0 = dports[0];
+    window.__adEditor.ops([{ op: 'updateNode', id: p0.id, set: { title: 'i_uart_rx', port: { name: 'i_uart_rx', dir: p0.port.dir } } }], 'rename port');
+    await wait(900);
+    raw = window.__adEditor.raw(); board = raw.diagrams.filter(function (d) { return d.boardOf; })[0];
+    ok('renaming a port inside renames it on the frame', (board.nodes || []).some(function (n) { return n.id === p0.id && n.port.name === 'i_uart_rx'; }));
+    document.querySelector('.ed-hier-btn').click();
+    await wait(900);
+    ok('the frame shows a link to its inside', !!svg().querySelector('.frame-detail[data-detail="' + D.id + '"]'));
+    svg().querySelector('.frame-detail[data-detail="' + D.id + '"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await wait(900);
+    ok('the link opens the inside tab', window.__adEditor.tab() === raw.diagrams.indexOf(raw.diagrams.filter(function (d) { return d.id === D.id; })[0]), window.__adEditor.tab());
+    document.querySelector('.ed-hier-btn').click();
+    await wait(900);
+    document.querySelector('.ed-hier-btn').click();
+    await wait(900);
+    var checks = document.querySelector('.ed-checks');
+    ok('bus interfaces keep their protocol names (s_axi_cpu, m_apb)', checks && !/s_axi_cpu|m_apb/.test(checks.textContent), checks && checks.textContent.slice(0, 200));
+    var ov = window.__adEditor.raw().diagrams[window.__adEditor.tab()], ic = ov.nodes.filter(function (n) { return n.ports && n.ports.in && n.ports.in.indexOf('s_axi_cpu') >= 0; })[0];
+    var icPorts = JSON.parse(JSON.stringify(ic.ports));
+    icPorts.in.push('DataReady');
+    window.__adEditor.ops([{ op: 'updateNode', id: ic.id, set: { ports: icPorts } }], 'a name off the style');
+    await wait(900);
+    checks = document.querySelector('.ed-checks');
+    var fixName = checks && Array.prototype.filter.call(checks.querySelectorAll('button'), function (b) { return /Rename|Đổi tên/.test(b.textContent); })[0];
+    ok('port names off the naming style are flagged with a fix', checks && /DataReady/.test(checks.textContent) && !!fixName, checks && checks.textContent.slice(0, 200));
+    if (fixName) fixName.click();
+    await wait(900);
+    ic = window.__adEditor.raw().diagrams[window.__adEditor.tab()].nodes.filter(function (n) { return n.id === ic.id; })[0];
+    ok('the fix gives the RTL name and keeps the bus interfaces', ic.ports.in.indexOf('i_data_ready') >= 0 && ic.ports.in.indexOf('s_axi_cpu') >= 0, JSON.stringify(ic.ports.in));
+    var text = await exportText('drawio');
+    ok('the draw.io file keeps notes, ports and links', /adNote="1"/.test(text) && /adPortName=/.test(text) && /adPage="1"/.test(text) && /link="data:page\/id,/.test(text), text.length);
+    R.push({ name: 'drawio export', pass: true, info: text });
+    ok('no script errors while testing', !window.__testErrors.length, window.__testErrors.join(' | '));
+"""
+
+ROUNDTRIP_JS = r"""
+    for (var i = 0; i < 80 && !svg(); i++) await wait(100);
+    await wait(300);
+    var tabs = document.querySelectorAll('#tabs .tab');
+    ok('every tab comes back', tabs.length >= 4, tabs.length);
+    function openTab(re) { var t = Array.prototype.filter.call(tabs, function (b) { return re.test(b.textContent); })[0]; if (t) t.click(); return !!t; }
+    ok('the board is found', openTab(/Detail|Chi tiết/));
+    await wait(400);
+    ok('the board still links to its overview', !!visible('.crumbs') && !/null|undefined/.test(visible('.crumbs').textContent), visible('.crumbs') && visible('.crumbs').textContent);
+    ok('ports are ports again', svg().querySelectorAll('.node[data-shape^="port-"]').length > 10);
+    ok('the frame still opens its inside', !!svg().querySelector('.frame-detail[data-detail]'));
+    ok('notes are notes again', svg().querySelectorAll('.note-sticky').length >= 1, svg().querySelectorAll('.note-sticky').length);
+    ok('no script errors while testing', !window.__testErrors.length, window.__testErrors.join(' | '));
+"""
+
+
 def wrap(body):
     return ("<script>\n(async function () {\n" + COMMON_JS + "\n  try {\n" + body +
             "\n  } catch (err) {\n    ok('test script ran without errors', false, err && err.stack ? err.stack.split('\\n').slice(0, 2).join(' | ') : err);\n  }\n"
@@ -1022,7 +1224,7 @@ def main(argv):
     if not browser:
         print("No Chromium-based browser found; cannot run the interaction test.")
         return 2
-    wanted = set(argv[1:]) or {"examples", "editor", "checks", "multi", "edge", "drawio", "manip", "assist", "grow", "symbols"}
+    wanted = set(argv[1:]) or {"examples", "editor", "checks", "multi", "edge", "drawio", "manip", "assist", "grow", "symbols", "board", "notesai"}
     failures = 0
     with tempfile.TemporaryDirectory() as tmp:
         if "examples" in wanted:
@@ -1054,6 +1256,21 @@ def main(argv):
             # every pattern goes into its own tab, so this page needs more (virtual) time than the others
             results, error = run_page(browser, SKILL / "examples" / "clock-reset-tree.json", js, "assist", tmp, query="?theme=light#cdc", budget=120000)
             failures += report("quick fixes, patterns and suggestions (clock-reset-tree.json)", results, error)
+        if "board" in wanted:
+            results, error = run_page(browser, SKILL / "examples" / "soc-block-diagram.json", BOARD_JS, "board", tmp, budget=90000)
+            failures += report("detail board built from an overview (soc-block-diagram.json)", results, error)
+        if "notesai" in wanted:
+            results, error = run_page(browser, SKILL / "examples" / "soc-block-diagram.json", NOTES_AI_JS, "notesai", tmp, budget=150000)
+            exported = [r for r in (results or []) if r["name"] == "drawio export"]
+            failures += report("notes, inside tabs, port names and AI with a stand-in bridge (soc-block-diagram.json)",
+                               [r for r in results if r["name"] != "drawio export"] if results else results, error)
+            if exported and exported[0]["info"]:
+                again = Path(tmp) / "roundtrip.drawio"
+                again.write_text(exported[0]["info"], encoding="utf-8")
+                results, error = run_page(browser, again, ROUNDTRIP_JS, "roundtrip", tmp, budget=60000)
+            else:
+                results, error = None, "no draw.io file from the notes and AI group"
+            failures += report("draw.io round trip of notes, ports and links", results, error)
         if "grow" in wanted:
             results, error = run_page(browser, ROOT / "tests" / "fixtures" / "grow.json", GROW_JS, "grow", tmp)
             failures += report("a diagram that grows and shrinks, following only suggestions (grow.json)", results, error)

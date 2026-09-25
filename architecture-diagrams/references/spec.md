@@ -2,7 +2,7 @@
 
 A spec is one JSON object. `scripts/validate.py` checks it; `scripts/build.py` turns it into a page.
 
-Contents: 1. Top level · 2. Fields every diagram has · 3. graph (nodes, groups, edges, steps, legend, styles, manual layout, pins) · 4. wave · 5. register · 6. memory · 7. chip · 8. pinout · 9. draw.io and editor wrappers · 10. What the checks report
+Contents: 1. Top level · 2. Fields every diagram has · 3. graph (nodes, groups, edges, steps, legend, styles, manual layout, pins) · 4. wave · 5. register · 6. memory · 7. chip · 8. pinout · 9. draw.io and editor wrappers · 10. What the checks report · 11. Editing operations · 12. Patterns · 13. Detail boards and inside tabs · 14. Sticky notes · 15. AI in the page · 16. Port names
 
 ## 1. Top level
 
@@ -40,6 +40,9 @@ Block diagrams, architecture maps, flows, processes, state machines, clock trees
 | `layout` | `"auto"` or `"manual"` | `auto` | `manual`: nodes carry `x` and `y`; see Manual layout. |
 | `route` | `straight`, `orthogonal`, `curved`, `spline`, `elbow`, `segment` | `spline` (auto), `straight` (manual) | Default line style for every edge. |
 | `font` | string | system font | CSS font family for the drawing. |
+| `notes` | list | `[]` | Sticky notes; see section 14. |
+| `boardOf` | tab id | none | This tab is the detail board of that overview tab (section 13). |
+| `detailOf` | `{"tab", "block"}` | none | This tab holds the inside of block (or frame) `block` of tab `tab` (section 13). |
 
 ### Node
 
@@ -63,6 +66,8 @@ Block diagrams, architecture maps, flows, processes, state machines, clock trees
 | `src` | URL | none | Picture for `"shape": "image"` (https or a data URL). |
 | `style` | object | `{}` | See Styles. |
 | `drawio` | object | none | Written by the draw.io import; keep it unchanged. |
+| `port` | `{"of", "name", "dir", "kind"}` | none | A port of a frame (`of` = the frame's group id) or, with no `of`, of the tab a block's inside lives in. `dir`: `in`, `out`, `inout`; `kind`: an edge kind such as `clock`. Shapes `port-in`, `port-out`, `port-io` (left and right edges) and `port-in-v`, `port-out-v`, `port-io-v` (top and bottom). Pin `EXT` faces the outside, `INT` the inside. |
+| `detail` | tab id | none | The tab that holds this block's inside (a ▸ on the block opens it). |
 
 ### Group
 
@@ -75,6 +80,8 @@ Block diagrams, architecture maps, flows, processes, state machines, clock trees
 | `x`, `y`, `w`, `h` | number | fitted around members | Manual layout: a fixed frame. |
 | `hidden` | boolean | `false` | Groups blocks without drawing a frame. |
 | `style` | object | `{}` | Node styles apply. |
+| `source` | node id | none | On a detail board: the overview block this frame stands for. Drawn with a solid border. |
+| `detail` | tab id | none | The tab the frame's inside moved to; the frame shows a ▸ link to it. |
 
 Frames with no blocks inside are not drawn. In the editor, dropping a block inside a frame puts it in that group.
 
@@ -95,6 +102,7 @@ Frames with no blocks inside are not drawn. In the editor, dropping a block insi
 | `labelDist`, `labelOffset` | number, `[dx, dy]` | 0 | Move the label off the line. |
 | `minlen`, `weight` | integer at least 1 | 1 (weight 3 for `main`) | Automatic layout: minimum ranks between the ends; higher weight keeps the edge short and straight. |
 | `style` | object | `{}` | See Styles. |
+| `source` | string | none | On a detail board: the overview connection this wire comes from (`"from>to"` or `"from>to:label"`). |
 
 ### Step
 
@@ -226,6 +234,10 @@ An end of a connection is a block id (`"ff2"`) or a block and one of its pins (`
 | `addGroup`, `updateGroup` | `group` object; `id`, `set`, `unset` | Adds or changes a group. |
 | `removeStep` | `index` | Removes one step. |
 | `updateDiagram` | `set` with `layout`, `route`, `direction`, `title` | Changes the tab itself. |
+| `addNote` | `note` (`text`, `kind`, `attach`, `x`, `y`, `dx`, `dy`, `w`, `date`, `by`) | Adds a sticky note; `date` defaults to today. |
+| `updateNote`, `removeNote` | `id`, `set`, `unset`; `id` | Changes or removes a note. |
+
+A block added into a frame (`group` = a frame with a fixed box in a hand-placed tab) is moved inside the frame's box, clear of the blocks and ports already there; the frame grows when it is full, and frames it would then cover move out of the way. A port added to a frame goes to the next free place on the side it was put nearest to. So operations from a script or an AI need only a rough position.
 
 ```json
 {"ops": [
@@ -275,3 +287,38 @@ The editor suggests what to do next, by the kind of block (read from its shape, 
 - With nothing selected, **Next steps** lists up to five suggestions for the whole tab: rejoin after a delete, blocks standing alone, decisions missing a branch, hubs missing their usual partners, then the ends of chains, newest first.
 - Keys 1 to 8 apply the suggestion with that number. In a hand-placed tab the first suggestion that adds a block or a wire is drawn faintly and Tab adds it (after a click on the drawing; a block reached with the keyboard keeps Tab for moving the focus). The preview can be turned off in the suggestion box.
 - The Checks list offers quick fixes, and an empty tab starts with a panel of ways to begin. `assist.py SPEC --suggest` and `diagram_suggest` return the same fixes, suggestions and next steps as operations.
+
+## 13. Detail boards and inside tabs
+
+An overview shows the blocks and how they connect; engineers then draw each block in detail. The tool keeps these levels linked instead of copied:
+
+- **Detail board**: the editor's "Detail board" button on an overview (`assist.py SPEC --board`, MCP `diagram_build_board`) adds a hand-placed tab with `boardOf` = the overview. Every block becomes a frame (a group with `source` and a fixed box) in the same arrangement, stretched until no frames overlap. Every connection becomes a wire between two ports on the frames' borders, on the side facing the other block, or on another side when the wire would otherwise run through a third frame. Port names come from the RTL port list of a card when one matches the block at the other end (`s_axi_cpu` for the CPU), else from the connection's label or the other block's name; on hardware tabs they follow the port-name style (section 16). An input takes one source, so inputs that would share a name get the other block's name too (`i_irq_uart`, `i_irq_gpio`). The board's wires keep the connection's words as their label.
+- **Following the overview**: after every edit, a new block gets its frame and a new connection its ports and wire; a renamed block keeps its frame and wires, a relabelled connection keeps its wire; a frame's label follows the block's title. Nothing drawn on the board is removed: a frame whose block left the overview, or a wire whose connection did, is listed in Checks.
+- **Inside tab**: "Inside in its own tab" on a frame (`assist.py SPEC --inside FRAME --diagram BOARD`, MCP `diagram_open_inside`) moves everything drawn in the frame, with the wires among it and the notes about it, to a new tab with `detailOf`. The frame keeps its ports and gets `detail`; the new tab gets copies of the ports (same ids) on its border. A block of an overview can get an inside tab too; its border ports come from its connections.
+- **Ports in step**: the ports of a frame and of its inside tab are matched by id: name, direction and kind follow the tab being edited; a port added on one side appears on the other; a port removed on one side goes from the other, except a frame port that carries a wire from the overview. Renaming a tab's id updates every link to it.
+- **Navigation**: a ▸ on a frame or block opens its inside tab; a board and an inside tab show a link back to where they come from; the editor has the same buttons next to the tab picker.
+
+## 14. Sticky notes
+
+`"notes": [{"id": "n1", "text": "…", "kind": "constraint", "attach": "uart", "date": "2026-09-25", "by": "Alex"}]`
+
+| Field | Notes |
+| --- | --- |
+| `id`, `text` | Required. |
+| `kind` | `note` (default), `constraint`, `reason`, `change`, `question`, `todo`, `legend`: shown as a coloured tag with the date and author. |
+| `attach` | A block id, a frame id, or `[from, to]` for a wire. An attached note sits next to it, moves with it and has a dashed leader; placed by default, it looks for a spot that covers no block or frame. |
+| `dx`, `dy` | Offset of an attached note from the top-right corner of what it is attached to (set by dragging it). |
+| `x`, `y` | Position of a free note. `w`: width, 80 to 600 (default 210). |
+
+In the editor: key N (or the 🗒 action next to a selection) adds a note to what is selected, double-click edits it, drag moves it, Delete removes it; the Notes pane lists every note. Under the suggestions, **Notes to add** offers notes written from the diagram: a signal crossing clock domains, a reset released out of step with its clock, a clock gate, unwired pins, a busy hub, memory and bus details, an empty frame with its ports, a colour legend, a dated change. The toolbar button 🗒 hides or shows notes for reading; exports follow what is shown, and draw.io files always get them as yellow note shapes.
+
+## 15. AI in the page
+
+- **What it does**: select one or more blocks or frames and press ✦ AI next to them, or use the editor's AI tab for the whole tab. The request goes to Claude Code on the same computer with the tab (as JSON), the selection, the frame boxes and the current problems. The answer is a list of operations (section 11) plus a one-sentence summary. The page applies them to a copy and checks the result; when an operation fails or new problems appear, it sends them back to the AI, at most twice. The change is shown first (green added, amber changed, red removed) and applied with **Apply** as one undo step; the AI's summary becomes a `change` note by `AI`. One request runs at a time. Edits made while the AI works, or while its change is shown, are kept: the AI's operations are applied again to the diagram as it is then, and when they no longer fit the page says so and nothing changes.
+- **The bridge**: `python3 scripts/ai_bridge.py` runs a small server on 127.0.0.1:8765 that calls `claude -p` with every tool turned off (the model can only answer), no MCP servers, no saved session and a JSON schema for the answer. It needs Claude Code signed in (a Claude seat is enough; no API key). It prints a pairing code; paste it in the AI tab once, or open the page with `#ai=8765:<code>`. Only pages from `file://`, localhost and the tool's GitHub Pages site may call it, and only with the code.
+- **Without the bridge**: the AI tab copies the same request for any chat AI and applies the JSON answer pasted back, with the same preview.
+- Sonnet answers in about half a minute (it runs at low effort); Opus runs at medium effort for harder requests.
+
+## 16. Port names
+
+On hardware tabs (RTL port lists, clock or reset wires, digital or analog symbols, hardware words in titles) the tool names ports in the usual RTL way: lower-case words joined by `_`, the direction in front (`i_`, `o_`, `io_`), and `_n` for active-low signals (`rst_n`, not `rstn` or `reset_b`). A bus interface (a bundle of signals going both ways) keeps the name its role and protocol give it, with no direction mark: `s_axi_cpu`, `m_apb`, `s_axis_rx`, or a SystemVerilog interface ending in `_if`. Checks flag port names that do not follow the style, with a fix. The editor's Settings pane switches between `i_`/`o_`/`io_` in front (default), `_i`/`_o`/`_io` at the end, or no name checks; the choice is kept in the browser. The AI is asked for the same names, and for `u_` instances, `r_` registers, `w_` wires and upper-case `P_` parameters, `C_` constants and `S_` states.

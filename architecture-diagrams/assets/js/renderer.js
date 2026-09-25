@@ -24,6 +24,12 @@ var I18N = {
     hintReg: 'Bit numbers on top, fields below. The table under the picture lists access type and reset value.',
     hintMem: 'Address map: lowest address at the bottom, highest at the top.',
     initial: 'Initial state', final: 'Final state',
+    noteKinds: { note: 'Note', constraint: 'Constraint', reason: 'Why', change: 'Change', question: 'Question', todo: 'To do', legend: 'Legend' },
+    notesOn: 'Notes: shown (click to hide them)', notesOff: 'Notes: hidden (click to show them)', notesBtn: 'Notes',
+    frameEmpty: 'Nothing inside yet', frameEmptyHint: 'Draw here, or select the frame and ask AI',
+    detailIn: 'Inside: tab {x}', detailOpen: 'Open the tab with what is inside this block',
+    crumbUp: 'Back to', crumbBoard: 'Detail board', crumbDetail: 'Inside of', boardOfIt: 'This tab is the detail board of',
+    hasBoard: 'Detail board:', portIn: 'input', portOut: 'output', portIo: 'in/out',
     download: 'Download', fmtCopy: 'Copy picture (paste into Word, PowerPoint, Teams)', copied: 'Copied', copyFail: 'Saved as PNG instead', fmtSvg: 'SVG, vector (PowerPoint, Word)', fmtPng: 'PNG image', fmtDrawio: 'draw.io file, editable (all tabs)', fmtMermaid: 'Mermaid text', fmtCsv: 'CSV table (Excel)',
     noDagre: 'The layout library (dagre) could not be loaded. Open this file with an internet connection, or rebuild it with build.py --dagre <path to dagre.min.js> to embed the library.',
     badSpec: 'The diagram data could not be read:',
@@ -78,6 +84,12 @@ var I18N = {
     hintReg: 'Số bit ở trên, các trường ở dưới. Bảng dưới hình ghi kiểu truy cập và giá trị reset.',
     hintMem: 'Bản đồ địa chỉ: địa chỉ thấp nhất ở dưới cùng, cao nhất ở trên cùng.',
     initial: 'Trạng thái đầu', final: 'Trạng thái cuối',
+    noteKinds: { note: 'Ghi chú', constraint: 'Ràng buộc', reason: 'Lý do', change: 'Thay đổi', question: 'Câu hỏi', todo: 'Việc cần làm', legend: 'Chú giải' },
+    notesOn: 'Ghi chú: đang hiện (bấm để ẩn)', notesOff: 'Ghi chú: đang ẩn (bấm để hiện)', notesBtn: 'Ghi chú',
+    frameEmpty: 'Chưa có chi tiết bên trong', frameEmptyHint: 'Vẽ vào đây, hoặc chọn khung rồi nhờ AI',
+    detailIn: 'Bên trong: tab {x}', detailOpen: 'Mở tab chứa phần bên trong của khối này',
+    crumbUp: 'Quay lại', crumbBoard: 'Bảng chi tiết', crumbDetail: 'Bên trong', boardOfIt: 'Tab này là bảng chi tiết của',
+    hasBoard: 'Bảng chi tiết:', portIn: 'vào', portOut: 'ra', portIo: 'vào/ra',
     download: 'Tải về', fmtCopy: 'Chép ảnh để dán vào Word, PowerPoint, Teams', copied: 'Đã chép', copyFail: 'Đã tải PNG thay thế', fmtSvg: 'SVG, ảnh vector (PowerPoint, Word)', fmtPng: 'Ảnh PNG', fmtDrawio: 'File draw.io sửa được (mọi tab)', fmtMermaid: 'Văn bản Mermaid', fmtCsv: 'Bảng CSV (Excel)',
     noDagre: 'Không tải được thư viện dàn trang dagre. Bạn mở file khi có mạng internet, hoặc build lại bằng build.py --dagre <đường dẫn tới dagre.min.js> để nhúng sẵn thư viện.',
     badSpec: 'Không đọc được dữ liệu sơ đồ:',
@@ -361,7 +373,8 @@ function normalizeDiagram(d, index) {
       shape: shape, ports: normPorts(n.ports), initial: n.initial === true, final: n.final === true,
       x: finiteNum(n.x), y: finiteNum(n.y), w: posNum(n.w), h: posNum(n.h), style: sty,
       labelPos: LABEL_POS.indexOf(n.labelPos) >= 0 ? n.labelPos : (sty.labelPos || null),
-      src: safeImageSrc(n.src), drawio: n.drawio && typeof n.drawio === 'object' ? n.drawio : null
+      src: safeImageSrc(n.src), drawio: n.drawio && typeof n.drawio === 'object' ? n.drawio : null,
+      port: normPort(n.port), detail: str(n.detail) || null
     };
     node.opts = { radius: sty.rounded === true ? null : (typeof sty.rounded === 'number' ? sty.rounded : null), rounded: !!sty.rounded, size: sty.size, fixedSize: sty.fixedSize,
                   direction: sty.direction, flipH: sty.flipH, flipV: sty.flipV, icon: iconName };
@@ -376,7 +389,7 @@ function normalizeDiagram(d, index) {
     if (groupById[gid]) { problem(where, 'dupGroup', { id: gid }); return; }
     var grp = { id: gid, label: str(g.label), icon: str(g.icon), color: PALETTE[g.color] ? g.color : 'slate', parent: str(g.parent) || null,
                 x: finiteNum(g.x), y: finiteNum(g.y), w: posNum(g.w), h: posNum(g.h), hidden: g.hidden === true, style: normNodeStyle(g.style),
-                drawio: g.drawio && typeof g.drawio === 'object' ? g.drawio : null };
+                drawio: g.drawio && typeof g.drawio === 'object' ? g.drawio : null, source: str(g.source) || null, detail: str(g.detail) || null };
     if (!grp.label && !grp.hidden && !grp.drawio) grp.label = gid;
     groups.push(grp);
     groupById[gid] = grp;
@@ -426,7 +439,7 @@ function normalizeDiagram(d, index) {
                  route: route, elbow: e.elbow === 'vertical' ? 'vertical' : 'horizontal', style: normEdgeStyle(e.style),
                  labelAt: isFinite(+e.labelAt) && e.labelAt !== null && e.labelAt !== '' ? Math.max(-1, Math.min(1, +e.labelAt)) : 0,
                  labelOffset: normPt(e.labelOffset), labelDist: finiteNum(e.labelDist) || 0,
-                 drawio: e.drawio && typeof e.drawio === 'object' ? e.drawio : null });
+                 drawio: e.drawio && typeof e.drawio === 'object' ? e.drawio : null, source: str(e.source) || null });
   });
 
   var steps = [];
@@ -462,8 +475,43 @@ function normalizeDiagram(d, index) {
     font: str(d.font).replace(/[^A-Za-z0-9 ,"'_-]/g, '').slice(0, 80) || null, source: str(d.source) || null,
     spacing: { rank: +spacing.rank || (horizontal ? 44 : 60), node: +spacing.node || (horizontal ? 30 : 36), edge: +spacing.edge || 18 },
     nodes: nodes, nodeById: nodeById, groups: groups, groupById: groupById, edges: edges, steps: steps,
-    legend: { colors: legend.colors && typeof legend.colors === 'object' ? legend.colors : {}, edges: legend.edges && typeof legend.edges === 'object' ? legend.edges : {} }
+    legend: { colors: legend.colors && typeof legend.colors === 'object' ? legend.colors : {}, edges: legend.edges && typeof legend.edges === 'object' ? legend.edges : {} },
+    notes: normNotes(d.notes, nodeById, groupById, edges),
+    boardOf: str(d.boardOf) || null,
+    detailOf: d.detailOf && typeof d.detailOf === 'object' && str(d.detailOf.tab) ? { tab: str(d.detailOf.tab), block: str(d.detailOf.block) } : null
   };
+}
+
+/* ---------- ports, notes: the parts a detail board and a detail tab add (hier.js builds them) ---------- */
+var PORT_DIRS = ['in', 'out', 'inout'];
+function normPort(v) {
+  if (!v || typeof v !== 'object' || !str(v.name)) return null;
+  return { of: str(v.of) || null, name: str(v.name).slice(0, 48), dir: PORT_DIRS.indexOf(v.dir) >= 0 ? v.dir : 'inout', kind: EDGE_STYLE[v.kind] ? v.kind : null };
+}
+var NOTE_KINDS = ['note', 'constraint', 'reason', 'change', 'question', 'todo', 'legend'];
+function normNotes(list, nodeById, groupById, edges) {
+  var out = [], seen = {};
+  (Array.isArray(list) ? list : []).forEach(function (q, k) {
+    if (!q || typeof q !== 'object') return;
+    var text = String(q.text === undefined || q.text === null ? '' : q.text).trim();
+    if (!text) return;
+    var id = str(q.id) || ('note-' + (k + 1));
+    while (seen[id]) id += '_';
+    seen[id] = true;
+    var att = null;
+    if (Array.isArray(q.attach) && q.attach.length === 2) {
+      var a = str(q.attach[0]), b = str(q.attach[1]);
+      edges.forEach(function (e, i) { if (!att && e.from === a && e.to === b) att = { type: 'edge', index: i }; });
+    } else if (str(q.attach)) {
+      var tid = str(q.attach);
+      if (nodeById[tid]) att = { type: 'node', id: tid };
+      else if (groupById[tid]) att = { type: 'group', id: tid };
+    }
+    out.push({ id: id, index: k, text: text.slice(0, 2000), kind: NOTE_KINDS.indexOf(q.kind) >= 0 ? q.kind : 'note', attach: att,
+               x: finiteNum(q.x), y: finiteNum(q.y), dx: finiteNum(q.dx), dy: finiteNum(q.dy),
+               w: clampNum(q.w, 80, 600) || 210, date: str(q.date).slice(0, 10), by: str(q.by).slice(0, 60) });
+  });
+  return out;
 }
 
 /* ---------- spec helpers for shapes, styles and manual layout ---------- */
@@ -731,8 +779,57 @@ function layoutDiagram(d) {
   if (!res) res = runDagre(d, nodeM, labelM, false);
   res.nodeM = nodeM;
   res.labelM = labelM;
+  res.notes = layoutNotes(d, res);
   finalizeBounds(d, res);
   return res;
+}
+
+/* ---------- sticky notes: an attached note sits right of what it is attached to and moves with it ---------- */
+var NOTE_FS = 11.5, NOTE_PAD = 8, NOTE_HEAD = 17, NOTE_FOLD = 11;
+function notesShown() { return storageGet('ad-notes') !== 'off'; }
+function noteTarget(d, res, att) {
+  if (!att) return null;
+  if (att.type === 'node') { var p = res.nodes[att.id]; return p ? { x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h } : null; }
+  if (att.type === 'group') { var b = res.groups[att.id]; return b ? { x: b.x, y: b.y, w: b.w, h: b.h } : null; }
+  var e = res.edges[att.index];
+  if (!e || !e.points || !e.points.length) return null;
+  var m = isFinite(e.lx) ? { x: e.lx, y: e.ly } : e.points[Math.floor(e.points.length / 2)];
+  return { x: m.x, y: m.y, w: 0, h: 0 };
+}
+function layoutNotes(d, res, always) {
+  if (!d.notes || !d.notes.length || (!always && !notesShown())) return [];
+  var x2 = -Infinity, y1 = Infinity;
+  Object.keys(res.nodes).forEach(function (id) { var p = res.nodes[id]; x2 = Math.max(x2, p.x + p.w / 2); y1 = Math.min(y1, p.y - p.h / 2); });
+  Object.keys(res.groups || {}).forEach(function (id) { var b = res.groups[id]; x2 = Math.max(x2, b.x + b.w); y1 = Math.min(y1, b.y); });
+  if (x2 === -Infinity) { x2 = 0; y1 = 0; }
+  var colY = y1, placed = [];
+  /* things a note placed by default should not cover: blocks, the frames of a detail board, other notes */
+  var solid = [];
+  Object.keys(res.nodes).forEach(function (id) { var p = res.nodes[id]; solid.push({ id: id, x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h }); });
+  d.groups.forEach(function (g) { var b = (res.groups || {})[g.id]; if (b && g.source) solid.push({ id: g.id, x: b.x, y: b.y, w: b.w, h: b.h }); });
+  var hits = function (b, skip) {
+    return solid.concat(placed).some(function (q) { return q.id !== skip && b.x < q.x + q.w + 6 && b.x + b.w + 6 > q.x && b.y < q.y + q.h + 6 && b.y + b.h + 6 > q.y; });
+  };
+  return d.notes.map(function (q) {
+    var lines = wrapText(q.text, q.w - NOTE_PAD * 2, NOTE_FS, 400, 14).lines;
+    var h = NOTE_PAD * 2 + NOTE_HEAD + lines.length * NOTE_FS * LH;
+    var el = noteTarget(d, res, q.attach), x, y;
+    if (el) {
+      x = el.x + el.w + (q.dx !== null ? q.dx : 18); y = el.y + (q.dy !== null ? q.dy : -4);
+      if (q.dx === null && q.dy === null) {
+        /* no place chosen yet: right of it, else left, below, above, inside its top-right corner */
+        var skip = q.attach.type === 'edge' ? null : q.attach.id;
+        var tries = [[el.x + el.w + 18, el.y - 4], [el.x - q.w - 18, el.y - 4], [el.x, el.y + el.h + 14], [el.x, el.y - h - 14], [el.x + el.w - q.w - 12, el.y + 34]];
+        for (var k = 0; k < tries.length; k++) { if (!hits({ x: tries[k][0], y: tries[k][1], w: q.w, h: h }, skip)) { x = tries[k][0]; y = tries[k][1]; break; } }
+      }
+    }
+    else if (q.x !== null && q.y !== null) { x = q.x; y = q.y; }
+    else { x = x2 + 44; y = colY; colY += h + 14; }
+    var box = { id: 'note:' + q.id, q: q, x: x, y: y, w: q.w, h: h, lines: lines, target: el };
+    placed.push({ id: box.id, x: x, y: y, w: q.w, h: h });
+    box.id = q.id;
+    return box;
+  });
 }
 
 function runDagre(d, nodeM, labelM, compound) {
@@ -866,6 +963,7 @@ function finalizeBounds(d, res) {
     var lm = res.labelM[i];
     if (lm.w && isFinite(e.lx)) add(e.lx - lm.w / 2, e.ly - lm.h / 2, e.lx + lm.w / 2, e.ly + lm.h / 2);
   });
+  (res.notes || []).forEach(function (b) { add(b.x, b.y, b.x + b.w, b.y + b.h); });
   var M = 20;
   res.ox = M - x1;
   res.oy = M - y1;
@@ -889,6 +987,7 @@ function layoutManual(d) {
   var groups = manualGroups(d, nodes, nodeM);
   var res = { nodes: nodes, groups: groups, nodeM: nodeM, labelM: labelM, manual: true };
   res.edges = d.edges.map(function (e, i) { return routeEdge(d, res, e, labelM[i]); });
+  res.notes = layoutNotes(d, res);
   finalizeBounds(d, res);
   return res;
 }
@@ -1434,12 +1533,16 @@ function drawDiagram(st, forExport) {
     var c = PALETTE[gr.color];
     if (gr.drawio || Object.keys(gr.style).length) {
       gLayer.appendChild(drawStyledGroup(gr, b, T));
+      if (gr.source) drawFrameInfo(d, gr, b, c, T, chipLayer, forExport);
       return;
     }
-    var label = chipLabel(gr), cw = chipWidth(gr);
-    gLayer.appendChild(S('g', { class: 'group', 'data-id': gr.id }, [
-      S('rect', { x: fmt(b.x), y: fmt(b.y), width: fmt(b.w), height: fmt(b.h), rx: 14, fill: rgba(c, T.groupFill), stroke: rgba(c, T.groupStroke), 'stroke-width': 1.5, 'stroke-dasharray': '7 5' })
+    var label = chipLabel(gr), cw = chipWidth(gr), frame = !!gr.source;
+    /* a frame of a detail board stands for one block: solid border, like the block's own outline */
+    gLayer.appendChild(S('g', { class: 'group' + (frame ? ' frame' : ''), 'data-id': gr.id }, [
+      S('rect', { x: fmt(b.x), y: fmt(b.y), width: fmt(b.w), height: fmt(b.h), rx: frame ? 8 : 14, fill: rgba(c, frame ? T.groupFill * 0.7 : T.groupFill),
+                  stroke: rgba(c, frame ? Math.min(1, T.groupStroke + 0.35) : T.groupStroke), 'stroke-width': frame ? 2 : 1.5, 'stroke-dasharray': frame ? null : '7 5' })
     ]));
+    if (frame) drawFrameInfo(d, gr, b, c, T, chipLayer, forExport);
     if (!gr.label) return;
     var named = iconKnown(gr.icon), chipInk = mix(c, T.chipText[0], T.chipText[1]);
     chipLayer.appendChild(S('g', { class: 'group-label', 'data-id': gr.id }, [
@@ -1614,6 +1717,7 @@ function drawDiagram(st, forExport) {
     nLayer.appendChild(g);
     refs.nodeEls[n.id] = g;
   });
+  d.nodes.forEach(function (n) { if (n.detail && refs.nodeEls[n.id]) drawNodeDetailMark(n, L, T, nLayer, forExport); });
   /* draw.io paints cells in file order: edges and shapes interleave, so imported drawings keep that order */
   if (d.source === 'drawio') {
     root.appendChild(eLayer);
@@ -1627,7 +1731,84 @@ function drawDiagram(st, forExport) {
     root.appendChild(chipLayer);
     root.appendChild(nLayer);
   }
+  refs.noteEls = {};
+  if (L.notes && L.notes.length) root.appendChild(drawNotes(L, T, refs, forExport, uid));
   return { svg: svg, refs: refs };
+}
+
+/* ---------- frames, links between tabs and sticky notes ---------- */
+function tabTitle(id) {
+  var list = spec && spec.diagrams ? spec.diagrams : [], hit = list.filter(function (x) { return x.id === id; })[0];
+  return hit ? (hit.title || hit.id) : id;
+}
+function frameInside(d, gid) {
+  var n = 0;
+  d.nodes.forEach(function (x) { if (x.group === gid && !(x.port && x.port.of === gid)) n++; });
+  d.groups.forEach(function (x) { if (x.parent === gid) n++; });
+  return n;
+}
+function drawFrameInfo(d, gr, b, c, T, layer, forExport) {
+  var cx = b.x + b.w / 2, cy = b.y + b.h / 2, ink = mix(c, T.chipText[0], T.chipText[1]);
+  if (gr.detail) {
+    var txt = '▸ ' + t('detailIn').replace('{x}', tabTitle(gr.detail)), tw = textWidth(txt, 12, 700) + 30;
+    layer.appendChild(S('g', { class: 'frame-detail', 'data-detail': gr.detail, 'data-id': gr.id, role: forExport ? null : 'link', tabindex: forExport ? null : 0 }, [
+      forExport ? null : S('title', { text: t('detailOpen') }),
+      S('rect', { x: fmt(cx - tw / 2), y: fmt(cy - 16), width: fmt(tw), height: 32, rx: 16, fill: mix(c, T.chipMix[0], T.chipMix[1]), stroke: rgba(c, 0.85), 'stroke-width': 1.2 }),
+      svgText(txt, cx, cy + 4.5, 12, 700, ink, { 'text-anchor': 'middle' })
+    ]));
+  } else if (!forExport && !frameInside(d, gr.id)) {
+    layer.appendChild(S('g', { class: 'frame-hint', 'data-id': gr.id }, [
+      svgText(t('frameEmpty'), cx, cy - 3, 13, 600, T.muted, { 'text-anchor': 'middle' }),
+      svgText(t('frameEmptyHint'), cx, cy + 15, 11, 400, T.muted, { 'text-anchor': 'middle', 'fill-opacity': 0.85 })
+    ]));
+  }
+}
+/* A block whose inside lives in its own tab: a small ▸ in its top-right corner opens that tab. */
+function drawNodeDetailMark(n, L, T, layer, forExport) {
+  var p = L.nodes[n.id];
+  if (!p) return;
+  var x = p.x + p.w / 2 - 9, y = p.y - p.h / 2 + 9, c = PALETTE[n.color];
+  layer.appendChild(S('g', { class: 'node-detail', 'data-detail': n.detail, 'data-id': n.id, role: forExport ? null : 'link', tabindex: forExport ? null : 0 }, [
+    forExport ? null : S('title', { text: t('detailOpen') + ': ' + tabTitle(n.detail) }),
+    S('circle', { cx: fmt(x), cy: fmt(y), r: 8, fill: T.page, stroke: c, 'stroke-width': 1.4 }),
+    svgText('▸', x + 0.6, y + 4, 10, 700, c, { 'text-anchor': 'middle' })
+  ]));
+}
+var NOTE_TAGS = { note: ['#f6d77a', '#4d3b00'], constraint: ['#f4b4b0', '#6e1712'], reason: ['#b9d3f5', '#16366a'], change: ['#bfe3b8', '#1a4f16'],
+                  question: ['#d8c6ea', '#43245f'], todo: ['#f9cf9f', '#5e3300'], legend: ['#dddddd', '#2b2b2b'] };
+function noteDate(v) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || '');
+  return m ? m[3] + '/' + m[2] + (m[1] !== String(new Date().getFullYear()) ? '/' + m[1] : '') : (v || '');
+}
+function noteHeadText(q) {
+  var kinds = t('noteKinds') || {};
+  return [kinds[q.kind] || q.kind, noteDate(q.date), q.by].filter(Boolean).join(' · ');
+}
+function drawNotes(L, T, refs, forExport, uid) {
+  var layer = S('g', { class: 'notes' });
+  L.notes.forEach(function (b) {
+    var q = b.q, w = b.w, h = b.h, tag = NOTE_TAGS[q.kind] || NOTE_TAGS.note;
+    if (b.target) {
+      /* a thin dashed leader from the note to what it is about */
+      var tx = Math.min(Math.max(b.x, b.target.x), b.target.x + b.target.w), ty = Math.min(Math.max(b.y + 14, b.target.y), b.target.y + b.target.h);
+      var sx = b.x <= tx ? b.x + w : b.x, sy = b.y + 14;
+      if (Math.abs(sx - tx) + Math.abs(sy - ty) > 6) layer.appendChild(S('path', { class: 'note-leader', d: 'M' + fmt(sx) + ',' + fmt(sy) + ' L' + fmt(tx) + ',' + fmt(ty), fill: 'none', stroke: '#c9a227', 'stroke-width': 1, 'stroke-dasharray': '3 3' }));
+    }
+    var g = S('g', { class: 'note-sticky', 'data-note': q.id, 'data-kind': q.kind, transform: 'translate(' + fmt(b.x) + ' ' + fmt(b.y) + ')', tabindex: forExport ? null : 0 });
+    if (!forExport) g.appendChild(S('title', { text: noteHeadText(q) + '\n' + q.text }));
+    g.appendChild(S('path', { class: 'note-body', d: 'M0,0 H' + fmt(w - NOTE_FOLD) + ' L' + fmt(w) + ',' + NOTE_FOLD + ' V' + fmt(h) + ' H0 Z', fill: '#fff2cc', stroke: '#d6b656', 'stroke-width': 1, filter: forExport ? null : 'url(#' + uid + '-sh)' }));
+    g.appendChild(S('path', { d: 'M' + fmt(w - NOTE_FOLD) + ',0 V' + NOTE_FOLD + ' H' + fmt(w) + ' Z', fill: '#efd98f', stroke: '#d6b656', 'stroke-width': 1, 'stroke-linejoin': 'round' }));
+    var head = noteHeadText(q), hw = Math.min(w - NOTE_PAD * 2 - NOTE_FOLD, textWidth(head, 10, 700) + 12);
+    g.appendChild(S('rect', { x: NOTE_PAD - 2, y: NOTE_PAD - 3, width: fmt(hw), height: 15, rx: 4, fill: tag[0] }));
+    g.appendChild(svgText(fitText(head, hw - 10, 10, 700), NOTE_PAD + 4, NOTE_PAD + 8, 10, 700, tag[1]));
+    var lh = NOTE_FS * LH;
+    b.lines.forEach(function (line, k) {
+      g.appendChild(svgText(line, NOTE_PAD, NOTE_PAD + NOTE_HEAD + k * lh + baseline(lh, NOTE_FS), NOTE_FS, 400, '#3a3320'));
+    });
+    layer.appendChild(g);
+    refs.noteEls[q.id] = g;
+  });
+  return layer;
 }
 
 /* Imported draw.io pages: put every edge right before the first shape drawn after it in the file. */
@@ -3159,6 +3340,8 @@ function buildSection(st) {
       d.tag ? H('span', { class: 'd-tag', text: d.tag }) : null
     ]));
   }
+  var crumbs = tabCrumbs(d);
+  if (crumbs) section.appendChild(crumbs);
   if (d.summary) {
     var sum = H('div', { class: 'summary' }, [H('span', { class: 'badge', text: t('readFirst') })]);
     richText(sum, d.summary);
@@ -3198,6 +3381,12 @@ function buildSection(st) {
     var bGrid = H('button', { type: 'button', class: 'tb-btn tb-grid', title: t('gridTitle'), 'aria-label': t('gridTitle'), 'aria-pressed': 'false', text: '▦' });
     bGrid.addEventListener('click', function () { toggleGrid(); });
     tools.push(bGrid);
+  }
+  if (isGraph && d.notes.length) {
+    var shown = notesShown();
+    var bNotes = H('button', { type: 'button', class: 'tb-btn tb-notes', title: t(shown ? 'notesOn' : 'notesOff'), 'aria-pressed': shown ? 'true' : 'false', text: '🗒 ' + t('notesBtn') });
+    bNotes.addEventListener('click', function () { toggleNotes(); });
+    tools.push(bNotes);
   }
   st.zoomEl = H('span', { class: 'tb-zoom', 'aria-live': 'polite', title: t('zoomLevel') });
   tools.push(bZoomOut, st.zoomEl, bFit, bZoomIn, H('span', { class: 'tb-sep' }), H('div', { class: 'tb-menu' }, [bMenu, menu]));
@@ -3275,6 +3464,12 @@ function renderState(st) {
   if (st.d.kind !== 'graph') return;
   applyFocus(st);
   applySearch(st);
+  var follow = function (ev) {
+    var link = ev.target.closest ? ev.target.closest('.frame-detail, .node-detail') : null;
+    if (link && goToTab(link.getAttribute('data-detail'))) { ev.stopPropagation(); ev.preventDefault(); }
+  };
+  st.svg.addEventListener('click', follow, true);
+  st.svg.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') follow(ev); }, true);
   st.svg.addEventListener('click', function (ev) {
     var nodeEl = ev.target.closest ? ev.target.closest('.node') : null;
     stopPlay(st);
@@ -3304,6 +3499,45 @@ function showSection(index, updateHash) {
   active = states[index];
   if (active && active.svg && active.scale === null) applyZoom(active);
   if (updateHash && states.length > 1 && history.replaceState) history.replaceState(null, '', '#' + active.d.id);
+}
+
+/* ---------- links between an overview, its detail board and the tabs that hold a block's inside ---------- */
+function goToTab(id) {
+  var idx = -1;
+  states.forEach(function (st, i) { if (st.d.id === id) idx = i; });
+  if (idx < 0) return false;
+  showSection(idx, true);
+  if (typeof edFollowTab === 'function') edFollowTab(id);
+  window.scrollTo(0, 0);
+  return true;
+}
+function blockName(tabId, id) {
+  var tab = (spec && spec.diagrams ? spec.diagrams : []).filter(function (x) { return x.id === tabId; })[0];
+  if (!tab || tab.kind !== 'graph') return id;
+  var g = tab.groupById[id], n = tab.nodeById[id];
+  return g ? (g.label || g.id) : n ? nodeName(n) : id;
+}
+function tabCrumbs(d) {
+  if (d.kind !== 'graph') return null;
+  var link = function (id, text) {
+    var b = H('button', { type: 'button', class: 'crumb', text: text });
+    b.addEventListener('click', function () { goToTab(id); });
+    return b;
+  };
+  var parts = [];
+  if (d.boardOf) parts.push(H('span', { text: t('boardOfIt') }), link(d.boardOf, '↰ ' + tabTitle(d.boardOf)));
+  if (d.detailOf) parts.push(H('span', { text: t('crumbDetail') + ' «' + blockName(d.detailOf.tab, d.detailOf.block) + '» ·' }), link(d.detailOf.tab, '↰ ' + t('crumbUp') + ': ' + tabTitle(d.detailOf.tab)));
+  var boards = (spec && spec.diagrams ? spec.diagrams : []).filter(function (x) { return x.boardOf === d.id; });
+  if (boards.length) {
+    parts.push(H('span', { text: t('hasBoard') }));
+    boards.forEach(function (b) { parts.push(link(b.id, (b.title || b.id) + ' ↘')); });
+  }
+  return parts.length ? H('nav', { class: 'crumbs', 'aria-label': t('crumbBoard') }, parts) : null;
+}
+function toggleNotes() {
+  storageSet('ad-notes', notesShown() ? 'off' : 'on');
+  if (typeof ED !== 'undefined' && ED && typeof edRender === 'function') edRender();
+  else renderSpec(currentRaw, true);
 }
 
 function buildTabs() {

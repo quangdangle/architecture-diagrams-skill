@@ -68,13 +68,29 @@ Symbols (`"shape": "dff"`, `"mux"`, `"pll"`, `"and"`, `"adc"`, `"nmos"` …) dra
 
 For a small change (add a block, wire one pin to another, fix what the checks report) send editing operations instead of rewriting the spec: `python3 <skill>/scripts/assist.py diagram.json --ops ops.json -o diagram.json`. `--suggest` lists every problem with its fix as operations, the next steps for the whole tab (at most five, most useful first) and likely next blocks for each block; apply the ones that fit. The format is in `references/spec.md` (sections 11 and 12). These commands run the page's own code in a headless browser, so they need Chrome, Chromium, Edge or Brave.
 
+## Overview, detail board and inside tabs
+
+Engineers draw an overview first, then each block in detail. Keep the levels linked instead of copying them:
+
+- `assist.py overview.json --board [--diagram TAB] -o design.json` adds a detail board: a hand-placed tab with every block of the overview as a frame (same arrangement) and every connection as a wire between named ports on the frames' borders. Engineers (or an AI) then draw the inside of each frame. The board follows later edits of the overview: new blocks get frames, new connections get ports and wires; nothing drawn is removed, and the checks list what no longer matches.
+- `assist.py design.json --inside FRAME --diagram BOARD -o design.json` moves what is drawn in one frame to its own tab, with copies of the frame's ports on the border. The frame keeps its ports and links to the tab (▸); ports added, renamed or removed on either side follow on the other.
+- Port names follow RTL practice: `i_`/`o_`/`io_` in front, snake_case, `_n` for active-low. The checks flag other names on hardware tabs with a fix; the editor's Settings can switch to `_i`/`_o` at the end or turn the check off.
+
+## Sticky notes
+
+`"notes"` on a tab holds sticky notes: a text, a kind (`note`, `constraint`, `reason`, `change`, `question`, `todo`, `legend`), a date, an author, and an `attach` (block, frame or `[from, to]` wire) so the note moves with it. The editor adds one with N, lists them in a Notes pane, and offers notes written from the diagram (clock-domain crossings, reset release, unwired pins, memory and bus details, a colour legend). Use them for the "why" that does not fit in a block: constraints, decisions, open questions.
+
+## AI in the page
+
+`scripts/ai_bridge.py` lets the page's ✦ AI button (next to selected blocks) and AI tab call Claude Code on the same computer: the page sends the tab, the selection and its problems; the answer is editing operations that the page checks (and sends back to fix, at most twice), previews and applies as one undo step, with the AI's summary as a note. The bridge listens on 127.0.0.1 only, needs a pairing code and runs `claude -p` with every tool off. Without it the AI tab copies the request for any chat AI.
+
 ## Starting from code
 
 `scan_code.py <repo> -o draft.json [--lang vi]` reads imports in Python, JavaScript/TypeScript, Go, Java/Kotlin and C/C++, and module instances with their ports in Verilog/SystemVerilog. It writes a first draft: an overview of folders and imports, drill-downs for the largest folders, and an RTL module hierarchy. Treat it as a draft: rename blocks, write real descriptions and add the walkthrough.
 
 ## Other AI tools, MCP and people without AI
 
-- **MCP:** `scripts/mcp_server.py` is a stdio MCP server (standard library only) with tools `diagram_guide`, `diagram_validate`, `diagram_build`, `diagram_open_editor`, `diagram_export`, `diagram_import_drawio`, `diagram_scan_code`, `diagram_symbols`, `diagram_patterns`, `diagram_insert_pattern`, `diagram_apply_ops` and `diagram_suggest`. Register it in Claude Code (`claude mcp add architecture-diagrams -- python3 <skill>/scripts/mcp_server.py`), Codex CLI, Cursor, VS Code, Gemini CLI or Claude Desktop.
+- **MCP:** `scripts/mcp_server.py` is a stdio MCP server (standard library only) with tools `diagram_guide`, `diagram_validate`, `diagram_build`, `diagram_open_editor`, `diagram_export`, `diagram_import_drawio`, `diagram_scan_code`, `diagram_symbols`, `diagram_patterns`, `diagram_insert_pattern`, `diagram_apply_ops`, `diagram_suggest`, `diagram_build_board` and `diagram_open_inside`. Register it in Claude Code (`claude mcp add architecture-diagrams -- python3 <skill>/scripts/mcp_server.py`), Codex CLI, Cursor, VS Code, Gemini CLI or Claude Desktop.
 - **Any chat AI:** the page's JSON tab has "Copy prompt for AI": the spec format, every symbol with its pins and the current diagram, ready to paste into ChatGPT, Gemini or Copilot. The JSON the AI returns is pasted back and applied; code fences are ignored.
 - **No AI:** `build.py --editor -o editor.html` makes an empty editor page; people fill in the tables, paste rows from Excel, drag and wire.
 
@@ -157,7 +173,8 @@ For a small change (add a block, wire one pin to another, fix what the checks re
 - `scripts/export.py`: draw.io, SVG, PNG, Mermaid, CSV, HTML, spec JSON or a draw.io symbol library.
 - `scripts/render_png.py`: screenshot for self-review.
 - `scripts/scan_code.py`: draft spec from a source repository.
-- `scripts/assist.py`: patterns, editing operations, and every problem with its fix.
+- `scripts/assist.py`: patterns, editing operations, every problem with its fix, detail boards (`--board`) and inside tabs (`--inside`).
+- `scripts/ai_bridge.py`: lets the page ask Claude Code on this computer (✦ AI).
 - `scripts/mcp_server.py`: the same features for any MCP client.
 - `references/spec.md`, `references/symbols.md`, `references/design-guide.md`: fields, symbols with pins, patterns.
 - `assets/`: the page template, renderer and editor (`js/`), the patterns (`patterns.json`), draw.io stencils (Apache 2.0), Lucide icons (ISC), dagre (MIT), the AI prompt. Do not edit them per diagram.
