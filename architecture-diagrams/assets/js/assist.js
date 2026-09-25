@@ -453,7 +453,7 @@ function asSetEnd(d, e, which, ref) {
 var AS_NODE_KEYS = ['title', 'desc', 'shape', 'icon', 'color', 'size', 'group', 'external', 'width', 'ports', 'initial', 'final', 'x', 'y', 'w', 'h', 'style', 'labelPos', 'src', 'port', 'detail'];
 var AS_EDGE_KEYS = ['label', 'kind', 'dir', 'route', 'points', 'style', 'labelAt', 'labelOffset', 'labelDist', 'minlen', 'weight', 'elbow', 'fromAnchor', 'toAnchor', 'fromPoint', 'toPoint', 'source'];
 var AS_GROUP_KEYS = ['label', 'color', 'parent', 'icon', 'hidden', 'x', 'y', 'w', 'h', 'source', 'detail', 'style'];
-var AS_TAB_KEYS = ['layout', 'route', 'direction', 'title', 'summary', 'tag', 'legend', 'spacing', 'font'];
+var AS_TAB_KEYS = ['layout', 'route', 'direction', 'title', 'summary', 'tag', 'legend', 'spacing', 'font', 'arranged'];
 /* A field an operation does not know is an error, never silently dropped: a script or an AI then learns what to fix. */
 function asUnknownKeys(set, known) {
   var bad = Object.keys(set).filter(function (k) { return known.indexOf(k) < 0; });

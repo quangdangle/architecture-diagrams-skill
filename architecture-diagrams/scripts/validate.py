@@ -135,7 +135,7 @@ MAX_PORT_NAME = 48
 
 DIAGRAM_KEYS = {"id", "type", "title", "tag", "summary", "direction", "spacing", "groups", "nodes", "edges", "steps", "legend",
                 "wave", "registers", "regions", "gaps", "columns", "links", "domains", "domain_label", "domainLabel", "chip", "package", "pins", "view",
-                "layout", "route", "font", "source", "drawio", "signal", "edge", "config", "head", "foot", "notes", "boardOf", "detailOf"}
+                "layout", "route", "font", "source", "drawio", "signal", "edge", "config", "head", "foot", "notes", "boardOf", "detailOf", "arranged"}
 TOP_KEYS = {"title", "subtitle", "lang", "theme", "diagrams", "editor", "example", "playground", "drawio", "name", "source", "drawioNote",
             "drawioSkipped", "drawioKeep"} | DIAGRAM_KEYS
 NODE_KEYS = {"id", "title", "icon", "desc", "color", "size", "group", "external", "width", "shape", "ports", "initial", "final",

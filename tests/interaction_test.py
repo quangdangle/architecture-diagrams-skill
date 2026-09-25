@@ -1090,6 +1090,8 @@ NOTES_AI_JS = r"""
     var pbar = document.querySelector('.ai-bar');
     ok('an answer that fails is sent back once, then the change is shown first', !!pbar && asked.length === 2 && /Errors/.test(asked[1].prompt), asked.length + ' asks');
     ok('the request carries the selection and the naming rule', /"selected":\["uart"\]/.test(asked[0].prompt) && /snake_case/.test(asked[0].system));
+    ok('the request carries the whole design: the overview of the board and what the frame is there',
+       /"design":/.test(asked[0].prompt) && /"overview":/.test(asked[0].prompt) && /"selectedInOverview":\[\{"frame":"uart"/.test(asked[0].prompt) && /context\.design/.test(asked[0].system));
     ok('the change is outlined before it is applied', svg().querySelectorAll('.ai-overlay rect').length >= 1);
     ok('nothing is applied before Apply', !window.__adEditor.raw().diagrams[window.__adEditor.tab()].nodes.some(function (n) { return n.id === 'u_fifo_rx'; }));
     pbar.querySelector('.ai-accept').click();

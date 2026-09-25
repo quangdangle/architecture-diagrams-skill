@@ -1956,6 +1956,8 @@ function hierArrangeBus(d) {
   });
   d.layout = 'manual';
   d.route = 'orthogonal';
+  /* remembered, so blocks the AI adds later are placed by arranging again */
+  d.arranged = 'bus';
   return null;
 }
 

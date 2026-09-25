@@ -104,7 +104,7 @@ var AI_OPS_DOC = [
   '- addNote {note: {text, kind, attach}}: a sticky note; kind is note, constraint, reason, change, question, todo or legend; attach is a block or frame id or [from, to].',
   '- updateNote {id, set}, removeNote {id}. updateDiagram {set: {layout, route, direction, title, summary, tag, legend}}. A field an op does not know is an error.',
   '- tidyFrame {id}: lays out the blocks inside a frame in layers (signals left to right), lines its ports up with them and fits the frame. End with it after drawing the inside of a frame; then rough x, y are enough.',
-  '- arrange {style: "bus"}: lays the whole tab out as a chip block diagram: every bus or crossbar a long bar, each group of blocks kept together in a row above or below the bar it hangs on, hosts above, straight wires to the bars. Use it when asked to tidy or arrange a chip or SoC diagram, and after adding many blocks to one; it needs bus wires (kind "bus") to the bars.'
+  '- arrange {style: "bus"}: lays the whole tab out as a chip block diagram: every bus or crossbar a long bar, each group of blocks kept together in a row above or below the bar it hangs on, hosts above, straight wires to the bars. Use it when asked to tidy or arrange a chip or SoC diagram, and after adding many blocks to one; it needs bus wires (kind "bus") to the bars. A tab already arranged ("arranged": "bus") is arranged again by the tool after any change that adds blocks or wires, so new blocks there need no x, y.'
 ].join('\n');
 var AI_SCHEMA = { type: 'object', properties: {
   ops: { type: 'array', items: { type: 'object' } },
@@ -124,6 +124,7 @@ function aiSystem() {
     'The ops are applied in order, all or nothing.', AI_OPS_DOC, '',
     'Rules:',
     '- Change only what the request asks. Keep the ids of blocks that stay. New ids and names: ' + aiNamingRule(),
+    '- Work from the whole design in context.design, not only this tab: keep names, bus widths and wiring consistent with the overview and the other tabs; follow every note of kind constraint or reason (notesInDesign) and say in "note" which ones applied; build on the earlier requests (thisSession, earlierChangesByAI): "the same for HMAC" or "like before" refer to them. When drawing the inside of a block (insideOf, selectedInOverview), use its description and its wires in the overview.',
     '- In a hand-placed tab ("layout": "manual") every new block gets x and y, multiples of 10, at least 40 px from other blocks. A card (no shape) is about 216 px wide and 70 to 110 px tall: give it no w or h. Symbols keep their own size.',
     '- Inside a frame (context.frames gives its box, top-left x, y and w, h): set "group" to the frame id and keep the block 40 px inside the border, clear of the ports on the border.',
     '- A port node (it has "port") has pin EXT on the outside of its frame and pin INT on the inside: wire the inside of a frame to "<port id>.INT".',
@@ -140,11 +141,76 @@ function aiTab(d) {
   [].concat(c.nodes || [], c.edges || [], c.groups || []).forEach(function (o) { if (o && o.drawio) delete o.drawio; });
   return c;
 }
+/* A tab in a few lines: blocks (id: title — description [group]) and wires (from → to (label) kind), for context. */
+function aiOutline(d, i) {
+  var clip = function (v, n) { v = str(asText(v)); return v.length > n ? v.slice(0, n - 1) + '…' : v; };
+  return {
+    id: hierTabId(d, i), title: clip(d.title, 80),
+    blocks: (d.nodes || []).filter(function (n) { return n && !n.port; }).slice(0, 150).map(function (n) {
+      return str(n.id) + ': ' + (clip(n.title, 60) || str(n.id)) + (str(asText(n.desc)) ? ' — ' + clip(n.desc, 110) : '') + (str(n.group) ? ' [' + str(n.group) + ']' : '');
+    }),
+    wires: (d.edges || []).filter(Boolean).slice(0, 200).map(function (e) {
+      return str(e.from) + ' → ' + str(e.to) + (str(asText(e.label)) ? ' (' + clip(e.label, 40) + ')' : '') + (e.kind && e.kind !== 'normal' ? ' ' + e.kind : '');
+    }),
+    groups: (d.groups || []).filter(function (g) { return g && !g.source; }).map(function (g) { return str(g.id) + ': ' + clip(g.label, 60); })
+  };
+}
+/* What the AI needs beyond the tab it changes, so that each request builds on the whole design and the requests
+   before it: the project, the tabs this one comes from (the overview of a detail board, the block whose inside this
+   tab holds, with its wires and notes), the rules written as notes anywhere, and the earlier requests. */
+function aiProjectContext(raw, di, targets) {
+  var d = raw.diagrams[di], out = { project: { title: str(asText(raw.title)), subtitle: str(asText(raw.subtitle)), lang: raw.lang || lang } };
+  var boardOf = str(d.boardOf), up = d.detailOf && typeof d.detailOf === 'object' ? d.detailOf : null;
+  if (boardOf) {
+    var ov = hierFind(raw, boardOf);
+    if (ov) out.overview = aiOutline(ov.d, ov.i);
+  }
+  if (up && str(up.tab)) {
+    var parent = hierFind(raw, str(up.tab)), block = str(up.block);
+    if (parent) {
+      var pd = parent.d, g = asGroupIds(pd)[block], n = asNodes(pd)[block], src = g && str(g.source) ? g.source : block;
+      var ovT = str(pd.boardOf) ? hierFind(raw, str(pd.boardOf)) : parent, ovN = ovT ? asNodes(ovT.d)[str(src)] : null;
+      out.insideOf = {
+        tab: hierTabId(pd, parent.i), block: block, title: str(asText((g && g.label) || (n && n.title) || block)),
+        desc: ovN ? str(asText(ovN.desc)) : n ? str(asText(n.desc)) : '',
+        ports: hierPorts(pd, g ? block : null).filter(function (pn) { return !g || str(pn.port.of) === block; }).map(function (pn) { return str(pn.port.name) + ' (' + str(pn.port.dir) + (pn.port.kind ? ', ' + pn.port.kind : '') + ')'; }),
+        wiresInOverview: ovT && ovN ? (ovT.d.edges || []).filter(function (e) { return e && (str(e.from) === str(src) || str(e.to) === str(src)); }).map(function (e) {
+          return str(e.from) + ' → ' + str(e.to) + (str(asText(e.label)) ? ' (' + str(asText(e.label)) + ')' : '') + (e.kind && e.kind !== 'normal' ? ' ' + e.kind : '');
+        }) : []
+      };
+      if (ovT) out.overview = out.overview || aiOutline(ovT.d, ovT.i);
+    }
+  }
+  /* the selected frames of a detail board: what their blocks are in the overview */
+  if (boardOf && targets && targets.kind === 'group' && out.overview) {
+    var ovTab = hierFind(raw, boardOf);
+    out.selectedInOverview = (targets.ids || []).map(function (id) {
+      var g = asGroupIds(d)[id], on = g && str(g.source) && ovTab ? asNodes(ovTab.d)[str(g.source)] : null;
+      if (!on) return null;
+      return { frame: id, title: str(asText(on.title)), desc: str(asText(on.desc)), wires: (ovTab.d.edges || []).filter(function (e) { return e && (str(e.from) === str(on.id) || str(e.to) === str(on.id)); }).map(function (e) { return str(e.from) + ' → ' + str(e.to) + (str(asText(e.label)) ? ' (' + str(asText(e.label)) + ')' : ''); }) };
+    }).filter(Boolean);
+  }
+  /* rules and open points noted anywhere in the design, and what the AI changed before (its notes) */
+  var rules = [], history = [];
+  raw.diagrams.forEach(function (x, i) {
+    (x && Array.isArray(x.notes) ? x.notes : []).forEach(function (q) {
+      if (!q || !str(q.text)) return;
+      var item = { tab: hierTabId(x, i), kind: q.kind || 'note', about: q.attach || null, text: str(q.text).slice(0, 300) };
+      if (q.by === 'AI') history.push({ tab: item.tab, date: q.date || '', about: item.about, text: item.text });
+      else if (['constraint', 'reason', 'question', 'todo', 'legend', 'note'].indexOf(item.kind) >= 0) rules.push(item);
+    });
+  });
+  if (rules.length) out.notesInDesign = rules.slice(0, 60);
+  if (history.length) out.earlierChangesByAI = history.slice(-12);
+  if (ED && Array.isArray(ED.aiLog) && ED.aiLog.length) out.thisSession = ED.aiLog.slice(0, 8).reverse().map(function (l) { return { request: str(l.request), state: l.state, note: str(l.note) }; });
+  return out;
+}
 function aiContextText(raw, di, targets, request, extra) {
   var d = raw.diagrams[di], st = active && active.d && active.L ? active : null, frames = {};
   if (st && st.d.kind === 'graph') Object.keys(st.L.groups || {}).forEach(function (g) { var b = st.L.groups[g]; frames[g] = { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.w), h: Math.round(b.h) }; });
   var ctx = { tab: aiTab(d), selected: targets && targets.ids ? targets.ids : [], selectedAre: targets && targets.kind === 'group' ? 'frames' : 'blocks',
-              frames: frames, problems: aiProblems(raw, di).slice(0, 40), otherTabs: raw.diagrams.map(function (x, i) { return { id: hierTabId(x, i), title: str(asText(x.title)), type: edTypeOf(x) }; }) };
+              frames: frames, problems: aiProblems(raw, di).slice(0, 40), otherTabs: raw.diagrams.map(function (x, i) { return { id: hierTabId(x, i), title: str(asText(x.title)), type: edTypeOf(x) }; }),
+              design: aiProjectContext(raw, di, targets) };
   return (extra ? extra + '\n\n' : '') + 'Context (JSON):\n' + JSON.stringify(ctx) + '\n\nRequest:\n' + request;
 }
 /* Every problem the checks find in a tab, as plain text (the same checks as the editor's Checks list). */
@@ -210,7 +276,7 @@ function aiRun(request, targets, box) {
       aiLog({ request: request, targets: targets, state: 'failed', error: aiT('eStale') });
       return;
     }
-    aiLog({ request: request, targets: targets, ops: used.length, state: 'pending' });
+    aiLog({ request: request, targets: targets, ops: used.length, state: 'pending', note: notes.join(' ') });
     aiPreview(p);
   };
   ask(aiContextText(before, di, targets, request)).catch(function (err) {
@@ -224,6 +290,9 @@ function aiRun(request, targets, box) {
 /* A frame that had nothing drawn inside and gets two or more blocks is laid out afterwards (models are poor at pixel
    sums), unless the answer already ends with tidyFrame for it. */
 function aiTidyOps(d, ops) {
+  /* a tab arranged around its buses is arranged again when the AI adds blocks or wires, so they get a place in the rows */
+  if (str(d.arranged) === 'bus' && !ops.some(function (o) { return o && o.op === 'arrange'; }) &&
+      ops.some(function (o) { return o && (o.op === 'addNode' || o.op === 'connect' || o.op === 'removeNode'); })) return [{ op: 'arrange', style: 'bus' }];
   var groups = asGroupIds(d), count = {}, asked = {};
   ops.forEach(function (o) {
     if (o && o.op === 'addNode' && o.node && str(o.node.group) && !o.node.port) count[str(o.node.group)] = (count[str(o.node.group)] || 0) + 1;
