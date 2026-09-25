@@ -21,6 +21,7 @@ var HT = {
     eTidyNone: 'no frame {x}', eTidyBox: 'frame {x} has no fixed place and size (x, y, w, h) to lay out in',
     eArrangeNoBus: 'there is no bus or crossbar to arrange around (a block wired to several others with bus wires, or named bus, crossbar, interconnect)',
     eArrangeBoard: 'arrange works on an overview; a detail board keeps the overview\'s arrangement', eArrangeStyle: 'unknown arrangement {x} (known: bus, stages)',
+    iNoteGone: 'The note {x} is attached to {y}, which is no longer in this tab', fNoteTo: 'Attach the note to {x}', fNoteFree: 'Leave the note free on the drawing',
     nsArrange: 'Arrange it as a chip: buses as bars, groups in rows', nsArrangeStages: 'Arrange it as a pipeline: each group a stage, left to right', eArrangeStages: 'a pipeline arrangement needs at least two groups (the stages) with blocks in them', noteFree: '(free on the drawing)',
     noteDel: 'Delete this note', noteIdeas: 'Notes to add', noteIdeasTitle: 'Notes written from this diagram: click one to add it, then edit the text',
     lNoteAdd: 'Note added', lNoteEdit: 'Note edited', lNoteDel: 'Note deleted', lNoteMove: 'Note moved',
@@ -56,6 +57,7 @@ var HT = {
     eTidyNone: 'không có khung {x}', eTidyBox: 'khung {x} chưa có vị trí và kích thước cố định (x, y, w, h) để xếp',
     eArrangeNoBus: 'không có bus hay crossbar nào làm trục để xếp (khối nối bus tới nhiều khối khác, hoặc tên có bus, crossbar, interconnect)',
     eArrangeBoard: 'thao tác xếp dùng cho sơ đồ tổng quan; bảng chi tiết giữ bố cục của tổng quan', eArrangeStyle: 'không có kiểu xếp {x} (có: bus, stages)',
+    iNoteGone: 'Ghi chú {x} gắn vào {y}, thứ này không còn trong tab', fNoteTo: 'Gắn ghi chú vào {x}', fNoteFree: 'Để ghi chú đứng tự do trên hình',
     nsArrange: 'Xếp kiểu sơ đồ chip: bus thành thanh ngang, khối theo nhóm thành hàng', nsArrangeStages: 'Xếp kiểu pipeline: mỗi nhóm một tầng, tín hiệu đi từ trái sang phải', eArrangeStages: 'xếp kiểu pipeline cần ít nhất hai nhóm (các tầng) có khối bên trong', noteFree: '(đặt tự do trên hình)',
     noteDel: 'Xoá ghi chú này', noteIdeas: 'Ghi chú nên thêm', noteIdeasTitle: 'Ghi chú soạn sẵn từ chính sơ đồ: bấm để thêm, rồi sửa lại chữ',
     lNoteAdd: 'Thêm ghi chú', lNoteEdit: 'Sửa ghi chú', lNoteDel: 'Xoá ghi chú', lNoteMove: 'Dời ghi chú',
@@ -956,7 +958,18 @@ function hierIssues(raw, ti) {
     });
   });
   hierNamingIssues(d, ti).forEach(function (q) { out.push(q); });
-  void nodes; void groups; void id;
+  /* a note still attached to a block, frame or wire that was removed (the AI reroutes a wire and the reason written on
+     it loses its place): attach it to what is left of it, or leave it free */
+  (d.notes || []).forEach(function (q) {
+    if (!q || q.attach === undefined || q.attach === null || q.attach === '' || hierAttachOk(d, q.attach)) return;
+    var head = str(asText(q.text)).split('\n')[0], short = head.length > 48 ? head.slice(0, 47) + '…' : head;
+    var what = Array.isArray(q.attach) ? str(q.attach[0]) + ' → ' + str(q.attach[1]) : str(q.attach), fixes = [];
+    var left = Array.isArray(q.attach) ? q.attach.map(str).filter(function (x) { return nodes[x] || groups[x]; }) : [];
+    if (left.length) fixes.push({ label: hl('fNoteTo', hq(left[0])), safe: true, ops: [{ op: 'updateNote', id: str(q.id), set: { attach: left[0] } }] });
+    fixes.push({ label: ht('fNoteFree'), safe: !left.length, ops: [{ op: 'updateNote', id: str(q.id), set: { attach: null } }] });
+    out.push({ text: hl('iNoteGone', hq(short), hq(what)), fixes: fixes });
+  });
+  void id;
   return out;
 }
 function hierIsExtEnd(n, a) { var e = hierExt(n), p = normAnchor(a); return !!p && Math.abs(p.x - e.x) < 0.02 && Math.abs(p.y - e.y) < 0.02; }

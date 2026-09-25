@@ -602,6 +602,17 @@ class ArrangeStages(unittest.TestCase):
             assist.apply_ops(spec, [{"op": "arrange", "style": "stages"}], diagram="f")
         self.assertIn("group", str(caught.exception))
 
+    def test_a_note_left_on_a_removed_wire_is_a_problem_with_fixes(self):
+        spec = self.core()
+        spec["diagrams"][0]["notes"].append({"id": "n3", "text": "Redirect on a mispredict", "kind": "reason", "attach": ["cm", "pc"]})
+        out = assist.apply_ops(spec, [{"op": "disconnect", "from": "cm", "to": "pc"}], diagram="core")
+        gone = [c for c in out["checks"] if "Redirect on a mispredict" in c["text"]]
+        self.assertEqual(len(gone), 1, out["checks"])
+        self.assertFalse(gone[0].get("soft"))
+        self.assertEqual(gone[0]["fixes"][0]["ops"], [{"op": "updateNote", "id": "n3", "set": {"attach": "cm"}}])
+        fixed = assist.apply_ops(out["spec"], gone[0]["fixes"][0]["ops"], diagram="core")
+        self.assertFalse([c for c in fixed["checks"] if "Redirect on a mispredict" in c["text"]], fixed["checks"])
+
     def test_a_wire_under_a_block_is_flagged_and_routed_round(self):
         nodes = [{"id": "a", "title": "Source", "x": 100, "y": 60}, {"id": "b", "title": "In the way", "x": 100, "y": 200},
                  {"id": "c", "title": "Sink", "x": 100, "y": 340}]
