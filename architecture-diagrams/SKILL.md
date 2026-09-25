@@ -60,7 +60,7 @@ Symbols (`"shape": "dff"`, `"mux"`, `"pll"`, `"and"`, `"adc"`, `"nmos"` …) dra
 
 ## draw.io files
 
-- Build a page straight from a draw.io file: `build.py design.drawio -o design.html`. Shapes from draw.io's general, flowchart, network and electrical libraries are drawn with draw.io's own stencils; groups, containers, rotations, routes and labels are kept.
+- Build a page straight from a draw.io file: `build.py design.drawio -o design.html` (also `.drawio.svg`, and `.drawio.png` saved with the diagram inside). Shapes from draw.io's general, flowchart, network and electrical libraries are drawn with draw.io's own stencils; groups, containers, rotations, routes and labels are kept.
 - To change it with code or an AI, turn it into a spec: `export.py design.drawio --format spec -o design.json`. Edit the JSON, keep every `drawio` object as it is, then `export.py design.json --format drawio -o design.drawio`. Cells you did not touch come back unchanged.
 - Symbols of this skill go to draw.io as editable stencils. `export.py x.json --format library` writes them as a draw.io shape library (File > Open Library in draw.io).
 

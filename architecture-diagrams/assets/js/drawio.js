@@ -262,6 +262,38 @@ function dioFileRoot(text) {
   if (root.tagName !== 'mxfile' && root.tagName !== 'mxGraphModel') throw new Error('not a draw.io file');
   return root;
 }
+/* The diagram inside a PNG saved by draw.io with the diagram included (.drawio.png): a tEXt, zTXt or iTXt chunk named
+   mxfile (mxGraphModel in old files), usually URL-encoded. Resolves to the file's text. */
+function dioPngText(buf) {
+  var b = new Uint8Array(buf), sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (var i = 0; i < 8; i++) if (b[i] !== sig[i]) return Promise.reject(new Error('not a PNG file'));
+  var latin = function (a, s, e) { var out = ''; for (var k = s; k < e; k++) out += String.fromCharCode(a[k]); return out; };
+  var inflate = function (bytes) {
+    if (typeof DecompressionStream === 'undefined') return Promise.reject(new Error('this browser cannot unpack the diagram in this PNG'));
+    return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer().then(function (ab) { return new Uint8Array(ab); });
+  };
+  var finish = function (text) { text = String(text).trim(); return (/^%3C/i.test(text) ? decodeURIComponent(text) : text).trim(); };
+  for (var pos = 8; pos + 8 <= b.length;) {
+    var len = ((b[pos] << 24) >>> 0) + (b[pos + 1] << 16) + (b[pos + 2] << 8) + b[pos + 3];
+    var type = latin(b, pos + 4, pos + 8), start = pos + 8, end = Math.min(b.length, start + len);
+    pos = end + 4;
+    if (type === 'IEND') break;
+    if (type !== 'tEXt' && type !== 'zTXt' && type !== 'iTXt') continue;
+    var z = start;
+    while (z < end && b[z] !== 0) z++;
+    var key = latin(b, start, z);
+    if (key !== 'mxfile' && key !== 'mxGraphModel') continue;
+    if (type === 'tEXt') return Promise.resolve(finish(latin(b, z + 1, end)));
+    if (type === 'zTXt') return inflate(b.subarray(z + 2, end)).then(function (u) { return finish(latin(u, 0, u.length)); });
+    var flag = b[z + 1], q = z + 3;
+    while (q < end && b[q] !== 0) q++;
+    q++;
+    while (q < end && b[q] !== 0) q++;
+    var body = b.subarray(q + 1, end);
+    return (flag ? inflate(body) : Promise.resolve(body)).then(function (u) { return finish(new TextDecoder('utf-8').decode(u)); });
+  }
+  return Promise.reject(new Error('this PNG has no draw.io diagram inside (in draw.io, export as PNG with the diagram included)'));
+}
 /* Resolves to a diagram spec. Needs DecompressionStream only for compressed pages. */
 function parseDrawio(text, fileName) {
   var root;

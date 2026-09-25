@@ -39,7 +39,7 @@ from validate import SYMBOL_ALIASES, SYMBOL_PINS, SYMBOL_SIZES, validate_spec  #
 VERSION = "1.1.0"
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
 FORMATS = ("drawio", "svg", "png", "mermaid", "csv", "html", "spec", "library")
-DRAWIO_SUFFIXES = (".drawio", ".xml", ".svg", ".dio")
+DRAWIO_SUFFIXES = (".drawio", ".xml", ".svg", ".dio", ".png")
 INSTRUCTIONS = (
     "Diagrams for software and chip design: block diagrams, flows, state machines, clock trees, schematics with named pins, "
     "timing diagrams, register maps, address maps, datasheet chip diagrams and pinouts. Call diagram_guide first for the JSON "
@@ -77,7 +77,7 @@ TOOLS = [
                                         output={"type": "string", "description": "Output file path."},
                                         theme={"type": "string", "enum": ["light", "dark"]})}},
     {"name": "diagram_import_drawio",
-     "description": "Read a draw.io file (.drawio, .xml, .svg, .dio) and return it as a spec that can be edited, validated and built. Shapes, groups, connections, pins and styles are kept, so exporting back to draw.io keeps the file as it was.",
+     "description": "Read a draw.io file (.drawio, .xml, .svg, .dio, or a .png saved with the diagram inside) and return it as a spec that can be edited, validated and built. Shapes, groups, connections, pins and styles are kept, so exporting back to draw.io keeps the file as it was.",
      "inputSchema": {"type": "object", "required": ["path"], "properties": {
          "path": {"type": "string"}, "lang": {"type": "string", "enum": ["en", "vi"]},
          "max_chars": {"type": "integer", "description": "Return the JSON inline up to this size (default 120000); larger specs are only written to a file."}}}},
@@ -269,7 +269,7 @@ def tool_import_drawio(args):
     if not p.is_file():
         raise ToolError(f"file not found: {p}")
     if p.suffix.lower() not in DRAWIO_SUFFIXES:
-        raise ToolError("expected a .drawio, .xml, .svg or .dio file saved by draw.io")
+        raise ToolError("expected a .drawio, .xml, .svg, .dio or .png file saved by draw.io")
     out = out_dir() / f"{slug(p.stem)}-{int(time.time() * 1000)}.json"
     argv = [str(p), "--format", "spec", "-o", str(out)]
     if args.get("lang"):

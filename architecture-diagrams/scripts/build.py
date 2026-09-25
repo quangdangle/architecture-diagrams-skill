@@ -7,7 +7,7 @@ Usage:
 The spec is validated first (see validate.py). The page embeds everything it needs,
 including the dagre layout library (assets/vendor/dagre.min.js, MIT License), so it
 works offline, on air-gapped machines too. --cdn loads dagre from a CDN instead for
-a smaller file. A draw.io file (.drawio, .xml, .svg) can be given in place of a spec.
+a smaller file. A draw.io file (.drawio, .xml, .svg, or a .png saved with the diagram inside) can be given in place of a spec.
 Standard library only, Python 3.8+.
 """
 
@@ -146,13 +146,54 @@ def embed_json(spec):
     return json.dumps(spec, ensure_ascii=False, indent=2).replace("<", "\\u003c")
 
 
+DRAWIO_SUFFIXES = (".drawio", ".xml", ".svg", ".dio", ".png")
+
+
+def png_drawio_text(data):
+    """The diagram inside a PNG saved by draw.io with the diagram included (.drawio.png): a tEXt, zTXt or iTXt chunk
+    named mxfile (or mxGraphModel in old files), usually URL-encoded."""
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG file")
+    pos = 8
+    while pos + 8 <= len(data):
+        length = int.from_bytes(data[pos:pos + 4], "big")
+        kind, body = data[pos + 4:pos + 8], data[pos + 8:pos + 8 + length]
+        pos += 12 + length
+        if kind == b"IEND":
+            break
+        if kind not in (b"tEXt", b"zTXt", b"iTXt"):
+            continue
+        key, _, rest = body.partition(b"\0")
+        if key not in (b"mxfile", b"mxGraphModel"):
+            continue
+        if kind == b"tEXt":
+            text = rest.decode("latin-1")
+        elif kind == b"zTXt":
+            text = zlib.decompress(rest[1:]).decode("latin-1")
+        else:
+            flag, rest = rest[0], rest[2:]
+            rest = rest.partition(b"\0")[2].partition(b"\0")[2]
+            text = (zlib.decompress(rest) if flag else rest).decode("utf-8")
+        text = text.strip()
+        return (urllib.parse.unquote(text) if text[:3].upper() == "%3C" else text).strip()
+    raise ValueError("this PNG has no draw.io diagram inside (in draw.io, export as PNG with the diagram included)")
+
+
+def read_drawio_text(path):
+    """Text of a draw.io file: .drawio, .xml, .dio, an SVG or a PNG saved by draw.io with the diagram inside."""
+    path = Path(path)
+    if path.suffix.lower() == ".png":
+        return png_drawio_text(path.read_bytes())
+    return path.read_text(encoding="utf-8")
+
+
 def drawio_spec(text, name, lang=None):
     """A page spec that converts a draw.io file when the page opens (see assets/js/drawio.js)."""
     if "mxfile" not in text and "mxGraphModel" not in text:
         raise ValueError("this file does not contain a draw.io diagram")
     if not lang:
         lang = "vi" if re.search(r"[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]", text, re.I) else "en"
-    return {"title": re.sub(r"\.(drawio|xml|svg|dio)$", "", name, flags=re.I), "lang": lang, "drawio": text, "name": name}
+    return {"title": re.sub(r"(\.drawio)?\.(drawio|xml|svg|dio|png)$", "", name, flags=re.I), "lang": lang, "drawio": text, "name": name}
 
 
 def count(spec):
@@ -164,7 +205,7 @@ def count(spec):
 
 def main():
     ap = argparse.ArgumentParser(description="Build an interactive HTML diagram from a JSON spec or a draw.io file.")
-    ap.add_argument("spec", nargs="?", help="path to the JSON spec, or a .drawio / .xml / .svg file saved by draw.io")
+    ap.add_argument("spec", nargs="?", help="path to the JSON spec, or a .drawio / .xml / .svg / .png file saved by draw.io")
     ap.add_argument("--lang", choices=("en", "vi"), help="page language for a draw.io file (default: guessed from its text)")
     ap.add_argument("-o", "--output", help="output HTML path (default: next to the spec, .html)")
     ap.add_argument("--dagre", help="another dagre.min.js to embed (default: assets/vendor/dagre.min.js)")
@@ -187,11 +228,10 @@ def main():
 
     spec_path = Path(args.spec)
     try:
-        text = spec_path.read_text(encoding="utf-8")
-        if spec_path.suffix.lower() in (".drawio", ".xml", ".svg", ".dio"):
-            spec = drawio_spec(text, spec_path.name, args.lang)
+        if spec_path.suffix.lower() in DRAWIO_SUFFIXES:
+            spec = drawio_spec(read_drawio_text(spec_path), spec_path.name, args.lang)
         else:
-            spec = json.loads(text)
+            spec = json.loads(spec_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         print(f"ERROR: cannot read {spec_path}: {exc}")
         return 2

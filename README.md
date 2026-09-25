@@ -58,7 +58,7 @@ Vẽ sơ đồ cho phần mềm và thiết kế vi mạch thành **một trang 
   - AI trả về các thao tác sửa. Tool kiểm tra lỗi nối dây và gửi lại cho AI tự sửa, tối đa 2 lần.
   - Phần thay đổi được tô màu để xem trước: xanh là thêm, vàng là sửa, đỏ là xoá. Bấm Áp dụng thì thay đổi thành một bước hoàn tác, kèm ghi chú AI tóm tắt đã làm gì.
   - Cần chạy cầu nối `scripts/ai_bridge.py` trên máy có Claude Code đã đăng nhập (xem mục AI trong trang bên dưới). Không có cầu nối thì tab AI chép sẵn yêu cầu để dán vào AI chat bất kỳ.
-- **draw.io:** mở file `.drawio` và vẽ giống hệt draw.io, sửa xong lưu lại thành `.drawio`. Những phần không bị sửa được giữ nguyên như cũ.
+- **draw.io:** mở file `.drawio`, `.drawio.svg` hoặc `.drawio.png` (ảnh có nhúng sơ đồ, như bản lưu của draw.io và tiện ích draw.io trong VS Code) và vẽ giống hệt draw.io, sửa xong lưu lại thành `.drawio`. Những phần không bị sửa được giữ nguyên như cũ.
 - **Xuất file:** SVG, PNG, Mermaid, CSV. Có nút chép ảnh để dán thẳng vào Word, PowerPoint hoặc Teams.
 - **Không cần cài gì, không cần mạng, không cần Figma.** Chỉ cần một trình duyệt.
 

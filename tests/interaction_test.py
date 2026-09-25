@@ -22,6 +22,7 @@ Needs Chrome, Chromium, Edge or Brave (same lookup as scripts/render_png.py).
 Exit code: 0 = all checks passed, 1 = a check failed, 2 = no browser found.
 """
 
+import base64
 import json
 import re
 import subprocess
@@ -568,6 +569,16 @@ DRAWIO_JS = r"""
     var moved = await pages(await exportText('drawio'));
     ok('a moved shape keeps its size and style in draw.io', moved[0].ctrl.geo !== before[0].ctrl.geo && moved[0].ctrl.style === before[0].ctrl.style && moved[0].ctrl.geo.split(',').slice(2).join() === before[0].ctrl.geo.split(',').slice(2).join(),
        before[0].ctrl.geo + ' -> ' + moved[0].ctrl.geo);
+    /* a PNG saved by draw.io with the diagram inside, dropped on the page */
+    var bin = atob('@@SAMPLE_PNG@@'), bytes = new Uint8Array(bin.length);
+    for (var k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+    var dt = new DataTransfer();
+    dt.items.add(new File([bytes], 'sample.drawio.png', { type: 'image/png' }));
+    document.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    for (var k2 = 0; k2 < 60 && !(window.__adEditor.raw() && /sample/.test(window.__adEditor.raw().title || '') && window.__adEditor.raw().diagrams.length === 2 && svg() && svg().querySelector('.node[data-id="uart"]')); k2++) await wait(100);
+    var fromPng = window.__adEditor.raw();
+    ok('a .drawio.png dropped on the page opens its diagram', fromPng && fromPng.diagrams.length === 2 && !!svg().querySelector('.node[data-id="uart"]') && !!svg().querySelector('.node[data-id="and1"]'),
+       fromPng && (fromPng.title + ' / ' + fromPng.diagrams.length));
 """
 
 MANIP_JS = r"""
@@ -1244,7 +1255,8 @@ def main(argv):
             results, error = run_page(browser, ROOT / "tests" / "fixtures" / "edge.json", EDGE_JS, "edge", tmp)
             failures += report("edge cases: markup in text, keys while typing, undo (edge.json)", results, error)
         if "drawio" in wanted:
-            results, error = run_page(browser, ROOT / "tests" / "fixtures" / "drawio" / "sample.drawio", DRAWIO_JS, "drawio", tmp)
+            png64 = base64.b64encode((ROOT / "tests" / "fixtures" / "drawio" / "sample.drawio.png").read_bytes()).decode("ascii")
+            results, error = run_page(browser, ROOT / "tests" / "fixtures" / "drawio" / "sample.drawio", DRAWIO_JS.replace("@@SAMPLE_PNG@@", png64), "drawio", tmp)
             failures += report("draw.io import and export (sample.drawio)", results, error)
         if "manip" in wanted:
             results, error = run_page(browser, ROOT / "tests" / "fixtures" / "manip.json", MANIP_JS, "manip", tmp, query="?theme=light&lang=vi")

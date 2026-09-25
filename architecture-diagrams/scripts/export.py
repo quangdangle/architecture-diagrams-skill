@@ -4,7 +4,7 @@
 Usage:
     python3 export.py INPUT [--format FORMAT] [--diagram ID] [-o OUTPUT] [--theme light|dark] [--lang en|vi]
 
-INPUT is a JSON spec, a page built by build.py, or a draw.io file (.drawio, .xml, .svg).
+INPUT is a JSON spec, a page built by build.py, or a draw.io file (.drawio, .xml, .svg, or a .png saved with the diagram inside).
 FORMAT is one of:
     drawio   editable draw.io file (every tab becomes a page)       [default]
     svg      vector image of one tab (--diagram picks the tab)
@@ -30,22 +30,21 @@ from urllib.parse import unquote
 sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from build import VENDORED_DAGRE, drawio_spec, render_page  # noqa: E402
+from build import DRAWIO_SUFFIXES, VENDORED_DAGRE, drawio_spec, read_drawio_text, render_page  # noqa: E402
 from render_png import find_browser, run_browser  # noqa: E402
 
 EXT = {"drawio": ".drawio", "svg": ".svg", "png": ".png", "mermaid": ".mmd", "csv": ".csv", "html": ".html", "spec": ".json", "library": ".xml"}
-DRAWIO_SUFFIXES = (".drawio", ".xml", ".svg", ".dio")
 
 
 def load_page(path, lang):
     """Return the HTML text of a page for any supported input."""
-    text = path.read_text(encoding="utf-8")
     suffix = path.suffix.lower()
     dagre = str(VENDORED_DAGRE) if VENDORED_DAGRE.exists() else None
+    if suffix in DRAWIO_SUFFIXES:
+        return render_page(drawio_spec(read_drawio_text(path), path.name, lang), dagre)
+    text = path.read_text(encoding="utf-8")
     if suffix in (".html", ".htm"):
         return text
-    if suffix in DRAWIO_SUFFIXES:
-        return render_page(drawio_spec(text, path.name, lang), dagre)
     return render_page(json.loads(text), dagre)
 
 

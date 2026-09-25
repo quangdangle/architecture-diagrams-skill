@@ -416,7 +416,7 @@ function edBuild() {
   ED.btnRedo = H('button', { type: 'button', class: 'tb-btn', title: et('redo'), 'aria-label': et('redo'), text: '↷' });
   ED.btnUndo.addEventListener('click', function () { edUndoRedo(true); });
   ED.btnRedo.addEventListener('click', function () { edUndoRedo(false); });
-  var file = H('input', { type: 'file', accept: '.json,.drawio,.xml,.svg,.dio,application/json', hidden: true });
+  var file = H('input', { type: 'file', accept: '.json,.drawio,.xml,.svg,.dio,.png,application/json', hidden: true });
   var bOpen = H('button', { type: 'button', class: 'tb-btn', title: et('openTitle'), text: et('open') });
   bOpen.addEventListener('click', function () { file.click(); });
   file.addEventListener('change', function () { var f = file.files && file.files[0]; if (f) edOpenFile(f); file.value = ''; });
@@ -481,6 +481,13 @@ function edSaveHtml() {
   edAfterSave();
 }
 function edOpenFile(f) {
+  /* a PNG saved by draw.io with the diagram inside */
+  if (/\.png$/i.test(f.name || '') || f.type === 'image/png') {
+    f.arrayBuffer().then(dioPngText).then(function (text) {
+      return loadStencilPack().then(function () { return parseDrawio(text, f.name); });
+    }).then(function (s) { s.lang = ED.raw.lang || lang; edLoad(s, f.name); }, function (err) { edStatus(String(err.message || err)); });
+    return;
+  }
   f.text().then(function (text) {
     var trimmed = text.replace(/^﻿/, '').trim();
     if (trimmed.charAt(0) === '{') {
