@@ -34,7 +34,10 @@ NODE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 ROUTES = ("curved", "spline", "straight", "orthogonal", "elbow", "segment")
 LABEL_POS = ("center", "top", "bottom", "left", "right", "none")
 ARROWS = ("none", "classic", "block", "open", "oval", "diamond", "classicThin", "blockThin", "openThin", "dash", "cross")
+NOTE_KINDS = ("note", "constraint", "reason", "change", "question", "todo", "legend")
+PORT_DIRS = ("in", "out", "inout")
 HEX_RE = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+DATE_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
 
@@ -126,17 +129,20 @@ MAX_STEPS = 12
 MAX_TITLE = 40
 MAX_DESC = 160
 MAX_LABEL = 40
+MAX_NOTE = 600
+MAX_BY = 60
+MAX_PORT_NAME = 48
 
 DIAGRAM_KEYS = {"id", "type", "title", "tag", "summary", "direction", "spacing", "groups", "nodes", "edges", "steps", "legend",
                 "wave", "registers", "regions", "gaps", "columns", "links", "domains", "domain_label", "domainLabel", "chip", "package", "pins", "view",
-                "layout", "route", "font", "source", "drawio", "signal", "edge", "config", "head", "foot"}
+                "layout", "route", "font", "source", "drawio", "signal", "edge", "config", "head", "foot", "notes", "boardOf", "detailOf"}
 TOP_KEYS = {"title", "subtitle", "lang", "theme", "diagrams", "editor", "example", "playground", "drawio", "name", "source", "drawioNote",
             "drawioSkipped", "drawioKeep"} | DIAGRAM_KEYS
 NODE_KEYS = {"id", "title", "icon", "desc", "color", "size", "group", "external", "width", "shape", "ports", "initial", "final",
-             "x", "y", "w", "h", "style", "labelPos", "src", "drawio"}
-GROUP_KEYS = {"id", "label", "icon", "color", "parent", "x", "y", "w", "h", "hidden", "style", "drawio"}
+             "x", "y", "w", "h", "style", "labelPos", "src", "drawio", "port", "detail"}
+GROUP_KEYS = {"id", "label", "icon", "color", "parent", "x", "y", "w", "h", "hidden", "style", "drawio", "source", "detail"}
 EDGE_KEYS = {"from", "to", "label", "kind", "minlen", "weight", "dir", "id", "points", "fromAnchor", "toAnchor", "fromPoint", "toPoint",
-             "route", "elbow", "style", "labelAt", "labelOffset", "labelDist", "drawio"}
+             "route", "elbow", "style", "labelAt", "labelOffset", "labelDist", "drawio", "source"}
 NODE_STYLE_KEYS = {"fill", "stroke", "text", "color", "labelBg", "labelBorder", "strokeWidth", "fontSize", "rotation", "size", "header", "imageBox",
                    "opacity", "fillOpacity", "strokeOpacity", "spacing", "spacingTop", "spacingLeft", "spacingRight", "spacingBottom", "dashed",
                    "bold", "italic", "underline", "flipH", "flipV", "shadow", "fixedSize", "wrap", "horizontal", "align", "valign", "rounded",
@@ -144,6 +150,9 @@ NODE_STYLE_KEYS = {"fill", "stroke", "text", "color", "labelBg", "labelBorder", 
 EDGE_STYLE_KEYS = {"color", "stroke", "text", "labelBg", "width", "fontSize", "endSize", "startSize", "dashed", "endArrow", "startArrow",
                    "endFill", "startFill", "rounded", "opacity", "bold"}
 STEP_KEYS = {"node", "edge", "title", "text"}
+NOTE_KEYS = {"id", "text", "kind", "attach", "x", "y", "dx", "dy", "w", "date", "by"}
+PORT_KEYS = {"of", "name", "dir", "kind"}
+DETAIL_OF_KEYS = {"tab", "block"}
 
 
 def _pins_of(node):
@@ -250,9 +259,14 @@ def _check_wiring(node_ids, edges, where, warnings, manual):
                 warnings.append(f'{where}: node "{ib}" sits on top of node "{ia}"; move one of them.')
 
 
-def _hint(value, options):
+def _close(value, options):
+    """' Did you mean "x"?' when an option is close, else nothing (for things that were renamed or removed)."""
     match = difflib.get_close_matches(str(value), options, n=1)
-    return f' Did you mean "{match[0]}"?' if match else f" Use one of: {', '.join(options)}."
+    return f' Did you mean "{match[0]}"?' if match else ""
+
+
+def _hint(value, options):
+    return _close(value, options) or f" Use one of: {', '.join(options)}."
 
 
 def _text(value):
@@ -342,6 +356,7 @@ def _check_diagram(d, where, errors, warnings, top_level):
 
     node_ids = {}
     used_colors = set()
+    port_names = {}
     for i, n in enumerate(nodes, 1):
         nw = f"{where} node #{i}"
         if not isinstance(n, dict):
@@ -361,7 +376,8 @@ def _check_diagram(d, where, errors, warnings, top_level):
         title = _text(n.get("title"))
         shape = str(n.get("shape", "card")).strip().lower() or "card"
         symbol = shape not in CORE_SHAPES
-        if not title and not symbol:
+        port = n.get("port")
+        if not title and not symbol and not isinstance(port, dict):
             errors.append(f'{label}: "title" is required.')
         elif len(title) > MAX_TITLE and not from_drawio:
             warnings.append(f"{label}: title has {len(title)} characters; keep names under {MAX_TITLE} and move detail to desc.")
@@ -419,6 +435,15 @@ def _check_diagram(d, where, errors, warnings, top_level):
                         errors.append(f'{label}: ports "{side}" must be a list of names.')
                 if n.get("shape") in ("decision", "state"):
                     warnings.append(f"{label}: ports are only drawn on normal cards, not on {n.get('shape')} shapes.")
+        if port is not None:
+            key = _check_port(port, label, group_ids, errors, warnings)
+            if key:
+                port_names.setdefault(key, []).append(nid)
+    for (of, name, direction), ids in port_names.items():
+        if len(ids) > 1:
+            owner = f'frame "{of}"' if of else "the tab border"
+            listed = ", ".join(f'"{x}"' for x in ids)
+            warnings.append(f'{where}: {owner} has {len(ids)} "{direction}" ports named "{name}" (nodes {listed}); give each port its own name.')
 
     for gid in group_ids:
         if gid in node_ids:
@@ -482,6 +507,8 @@ def _check_diagram(d, where, errors, warnings, top_level):
                 errors.append(f'{ew}: "{key}" must be a whole number of at least 1.')
         if "dir" in e and e["dir"] not in DIRS:
             errors.append(f'{ew}: dir "{e["dir"]}" is not supported.{_hint(e["dir"], DIRS)}')
+        if e.get("source") is not None and not isinstance(e["source"], str):
+            errors.append(f'{ew}: "source" must be a string such as "cpu>bus" or "cpu>bus:AXI".')
 
     _check_wiring(node_ids, edges, where, warnings, manual)
 
@@ -510,6 +537,8 @@ def _check_diagram(d, where, errors, warnings, top_level):
                 errors.append(f"{sw}: there is no edge {ref[0]} -> {ref[1]}.{tip}")
         if not _text(s.get("text")):
             warnings.append(f'{sw}: add "text", a full sentence saying what happens at this step.')
+
+    _check_notes(d.get("notes", []), where, node_ids, group_ids, edges, errors, warnings)
 
     legend = d.get("legend", {})
     if not isinstance(legend, dict):
@@ -579,6 +608,92 @@ def _check_style(style, allowed, where, errors, warnings):
             errors.append(f'{where}: style "{key}" is "{style[key]}".{_hint(style[key], ARROWS)}')
     if "labelPos" in style and style["labelPos"] not in LABEL_POS:
         errors.append(f'{where}: style "labelPos" is "{style["labelPos"]}".{_hint(style["labelPos"], LABEL_POS)}')
+
+
+def _check_port(port, label, group_ids, errors, warnings):
+    """A port node sits on a frame's border ("of" = the frame's group id) or on a detail tab's border ("of" empty).
+    Returns (of, name, dir) for the duplicate check, or None."""
+    if not isinstance(port, dict):
+        errors.append(f'{label}: "port" must be an object like {{"of": "cpu", "name": "AXI", "dir": "out"}}.')
+        return None
+    _unknown_keys(port, PORT_KEYS, f"{label} port", warnings)
+    of = "" if port.get("of") is None else str(port["of"])
+    if of and of not in group_ids:
+        errors.append(f'{label}: port "of" names unknown group "{of}".{_hint(of, list(group_ids) or ["(define it in groups)"])}')
+    name = _text(port.get("name"))
+    if not name:
+        errors.append(f'{label}: port "name" is required (1 to {MAX_PORT_NAME} characters).')
+    elif len(name) > MAX_PORT_NAME:
+        warnings.append(f"{label}: port name has {len(name)} characters; keep it to {MAX_PORT_NAME} or fewer.")
+    direction = port.get("dir")
+    if direction is None:
+        errors.append(f'{label}: port "dir" is required: "in", "out" or "inout".')
+    elif direction not in PORT_DIRS:
+        errors.append(f'{label}: port "dir" is "{direction}".{_hint(direction, PORT_DIRS)}')
+    if port.get("kind") is not None and port["kind"] not in KINDS:
+        errors.append(f'{label}: port kind "{port["kind"]}" is not supported.{_hint(port["kind"], KINDS)}')
+    return (of, name, direction) if name and direction in PORT_DIRS else None
+
+
+def _check_notes(notes, where, node_ids, group_ids, edges, errors, warnings):
+    """Sticky notes: a free note sits at x/y; an attached one follows a block, a frame or an edge, dx/dy from its top-right corner."""
+    if not isinstance(notes, list):
+        errors.append(f'{where}: "notes" must be a list.')
+        return
+    pairs = {(str(e["from"]), str(e["to"])) for e in edges
+             if isinstance(e, dict) and e.get("from") not in (None, "") and e.get("to") not in (None, "")}
+    seen = set()
+    for i, note in enumerate(notes, 1):
+        nw = f"{where} note #{i}"
+        if not isinstance(note, dict):
+            errors.append(f"{nw}: must be an object.")
+            continue
+        _unknown_keys(note, NOTE_KEYS, nw, warnings)
+        nid = note.get("id")
+        if nid is None or not NODE_ID_RE.match(str(nid)):
+            errors.append(f'{nw}: "id" is required and may only use letters, digits, "_", "-", ":" and ".".')
+            continue
+        nid = str(nid)
+        if nid in seen:
+            errors.append(f'{nw}: duplicate note id "{nid}".')
+            continue
+        seen.add(nid)
+        label = f'{nw} ("{nid}")'
+        text = _text(note.get("text"))
+        if not text:
+            errors.append(f'{label}: "text" is required.')
+        elif len(text) > MAX_NOTE:
+            warnings.append(f"{label}: text has {len(text)} characters; keep a note under {MAX_NOTE} and move the rest to a document.")
+        kind = note.get("kind")
+        if kind is not None and kind not in NOTE_KINDS:
+            errors.append(f'{label}: kind "{kind}" is not supported.{_hint(kind, NOTE_KINDS)}')
+        attach = note.get("attach")
+        if isinstance(attach, str) and attach:
+            if attach not in node_ids and attach not in group_ids:
+                near = _close(attach, sorted(set(node_ids) | set(group_ids)))
+                warnings.append(f'{where}: note "{nid}" is attached to "{attach}", which is not in this tab.{near}')
+        elif isinstance(attach, list) and len(attach) == 2:
+            a, b = str(attach[0]), str(attach[1])
+            if (a, b) not in pairs:
+                tip = f' The edge exists the other way round: ["{b}", "{a}"].' if (b, a) in pairs else ""
+                warnings.append(f'{where}: note "{nid}" is attached to the edge {a} -> {b}, which is not in this tab.{tip}')
+        elif attach not in (None, ""):
+            errors.append(f'{label}: "attach" must be a block or frame id, or an edge as ["from", "to"].')
+        for key in ("x", "y", "dx", "dy"):
+            if note.get(key) is not None and not isinstance(note[key], (int, float)):
+                errors.append(f'{label}: "{key}" must be a number.')
+        width = note.get("w")
+        if width is not None and (not isinstance(width, (int, float)) or not 80 <= width <= 600):
+            errors.append(f'{label}: "w" must be a number between 80 and 600.')
+        date = note.get("date")
+        if date is not None and not (isinstance(date, str) and DATE_RE.fullmatch(date)):
+            warnings.append(f'{label}: date "{date}" should be written YYYY-MM-DD, like "2026-09-25".')
+        by = note.get("by")
+        if by is not None:
+            if not isinstance(by, str):
+                errors.append(f'{label}: "by" must be text, the name of who wrote the note.')
+            elif len(by.strip()) > MAX_BY:
+                warnings.append(f'{label}: "by" has {len(by.strip())} characters; keep it to a name under {MAX_BY}.')
 
 
 def _num(v):
@@ -822,20 +937,116 @@ def _check_pinout(d, where, errors, warnings):
             warnings.append(f"{where}: {total - len(numbers)} of {total} pins are not listed; they are drawn as NC.")
 
 
+def _kind_of(d):
+    """The type of a diagram object ("graph", "wave", "register", "memory", "chip", "pinout"), or None when "type" names none of them."""
+    if d.get("type") is not None:
+        return TYPES.get(str(d["type"]).lower())
+    return "wave" if "wave" in d else "register" if "registers" in d else "memory" if "regions" in d else \
+           "chip" if "columns" in d else "pinout" if "package" in d else "graph"
+
+
 def _check_by_type(d, where, errors, warnings, top_level):
-    kind = TYPES.get(str(d.get("type", "")).lower()) if isinstance(d, dict) and d.get("type") is not None else None
-    if isinstance(d, dict) and d.get("type") is not None and kind is None:
+    kind = _kind_of(d) if isinstance(d, dict) else None
+    if isinstance(d, dict) and kind is None:
         errors.append(f'{where}: type "{d.get("type")}" is not supported.{_hint(d.get("type"), sorted(TYPES))}')
         return
-    if kind is None and isinstance(d, dict):
-        kind = "wave" if "wave" in d else "register" if "registers" in d else "memory" if "regions" in d else \
-               "chip" if "columns" in d else "pinout" if "package" in d else "graph"
     if kind == "graph":
         _check_diagram(d, where, errors, warnings, top_level)
         return
     if not _text(d.get("summary")):
         warnings.append(f'{where}: add a "summary" (1 to 3 sentences) telling readers what they are looking at.')
     {"wave": _check_wave, "register": _check_registers, "memory": _check_memory, "chip": _check_chip, "pinout": _check_pinout}[kind](d, where, errors, warnings)
+
+
+def _members(items):
+    """{id: (number, object)} for the nodes or groups of a tab that have a valid id; the first of two with one id counts."""
+    found = {}
+    for i, item in enumerate(items if isinstance(items, list) else [], 1):
+        if isinstance(item, dict) and item.get("id") is not None and NODE_ID_RE.match(str(item["id"])):
+            found.setdefault(str(item["id"]), (i, item))
+    return found
+
+
+def _check_tab_links(tabs, errors, warnings):
+    """Checks across tabs: a detail board ("boardOf", frames with "source") and detail tabs ("detailOf", "detail").
+    tabs: (where, diagram) for every tab of the spec, in order."""
+    by_id = {}
+    for _, d in tabs:
+        if isinstance(d, dict) and d.get("id") is not None:
+            by_id.setdefault(str(d["id"]), d)
+    held = {}
+    for where, d in tabs:
+        if not isinstance(d, dict) or _kind_of(d) != "graph":
+            continue
+        tid = str(d["id"]) if d.get("id") is not None else None
+        others = sorted(t for t in by_id if t != tid)
+        groups, nodes = _members(d.get("groups")), _members(d.get("nodes"))
+
+        board_of, overview = d.get("boardOf"), None
+        if board_of is not None:
+            graphs = [t for t in others if _kind_of(by_id[t]) == "graph"]
+            if not isinstance(board_of, str) or not board_of.strip():
+                errors.append(f'{where}: "boardOf" must be the id of the overview tab this board was made from.')
+            elif board_of == tid:
+                errors.append(f'{where}: "boardOf" names this tab itself; it must name the overview tab the board was made from.')
+            elif board_of not in by_id:
+                errors.append(f'{where}: "boardOf" names tab "{board_of}", which is not in this spec.{_hint(board_of, graphs) if graphs else ""}')
+            elif _kind_of(by_id[board_of]) != "graph":
+                errors.append(f'{where}: "boardOf" names tab "{board_of}", which is not a graph; a detail board is made from a graph tab.')
+            else:
+                overview = by_id[board_of]
+        blocks = _members(overview.get("nodes")) if overview is not None else {}
+        for gid, (i, g) in groups.items():
+            source = g.get("source")
+            if source is None:
+                continue
+            if not isinstance(source, str):
+                errors.append(f'{where} group #{i} ("{gid}"): "source" must be the id of the overview block this frame stands for.')
+            elif board_of is None:
+                warnings.append(f'{where}: group "{gid}" has a "source" but this tab has no "boardOf"; add "boardOf" (the overview tab) or remove "source".')
+            elif overview is not None and source not in blocks:
+                shown = f'"{_text(overview.get("title"))}"' if _text(overview.get("title")) else f'tab "{board_of}"'
+                warnings.append(f'{where}: frame "{gid}" stands for block "{source}", which is no longer in {shown}.{_close(source, sorted(blocks))}')
+
+        detail_of = d.get("detailOf")
+        if detail_of is not None:
+            if not isinstance(detail_of, dict):
+                errors.append(f'{where}: "detailOf" must be an object like {{"tab": "overview", "block": "cpu"}}.')
+            else:
+                _unknown_keys(detail_of, DETAIL_OF_KEYS, f"{where} detailOf", warnings)
+                tab, block = detail_of.get("tab"), detail_of.get("block")
+                if tab in (None, "") or block in (None, ""):
+                    errors.append(f'{where}: "detailOf" needs both "tab" and "block", like {{"tab": "overview", "block": "cpu"}}.')
+                else:
+                    tab, block = str(tab), str(block)
+                    if (tab, block) in held:
+                        warnings.append(f'{where}: holds the inside of block "{block}" of tab "{tab}", as {held[(tab, block)]} already does; keep one detail tab per block.')
+                    held.setdefault((tab, block), where)
+                    if tab not in by_id:
+                        errors.append(f'{where}: "detailOf" names tab "{tab}", which is not in this spec.{_hint(tab, others) if others else ""}')
+                    else:
+                        inside = sorted(set(_members(by_id[tab].get("nodes"))) | set(_members(by_id[tab].get("groups"))))
+                        if block not in inside:
+                            warnings.append(f'{where}: "detailOf" names block "{block}", which is not a block or frame of tab "{tab}".{_close(block, inside)}')
+
+        for what, members in (("group", groups), ("node", nodes)):
+            for mid, (i, m) in members.items():
+                target = m.get("detail")
+                if target is None:
+                    continue
+                label = f'{where} {what} #{i} ("{mid}")'
+                if not isinstance(target, str) or not target.strip():
+                    errors.append(f'{label}: "detail" must be the id of the tab that holds its inside.')
+                elif target not in by_id:
+                    errors.append(f'{label}: "detail" names tab "{target}", which is not in this spec.{_hint(target, others) if others else ""}')
+                elif tid is None:
+                    warnings.append(f'{label}: "detail" names tab "{target}", but this tab has no "id" for the "detailOf" of that tab to point back to.')
+                else:
+                    back = by_id[target].get("detailOf")
+                    if not (isinstance(back, dict) and back.get("tab") is not None and str(back["tab"]) == tid
+                            and back.get("block") is not None and str(back["block"]) == mid):
+                        warnings.append(f'{label}: "detail" names tab "{target}", whose "detailOf" does not point back here; '
+                                        f'set it to {{"tab": "{tid}", "block": "{mid}"}}.')
 
 
 def validate_spec(spec):
@@ -862,6 +1073,7 @@ def validate_spec(spec):
             errors.append('"diagrams" must be a non-empty list.')
             return errors, warnings
         seen = set()
+        tabs = []
         for i, d in enumerate(diagrams, 1):
             did = d.get("id") if isinstance(d, dict) else None
             where = f'diagram "{did}"' if did else f"diagram #{i}"
@@ -874,9 +1086,12 @@ def validate_spec(spec):
             elif len(diagrams) > 1:
                 warnings.append(f"{where}: add an \"id\" so the tab can be linked directly (page.html#id).")
             _check_by_type(d, where, errors, warnings, top_level=False)
+            tabs.append((where, d))
+        _check_tab_links(tabs, errors, warnings)
     else:
         _unknown_keys(spec, TOP_KEYS, "top level", warnings)
         _check_by_type(spec, "diagram", errors, warnings, top_level=True)
+        _check_tab_links([("diagram", spec)], errors, warnings)
     return errors, warnings
 
 
