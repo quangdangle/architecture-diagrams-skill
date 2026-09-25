@@ -1,0 +1,180 @@
+{
+ "_about": "A real answer from Claude Sonnet (low effort) through scripts/ai_bridge.py to 'draw the inside of this block from its ports' for the UART frame of the SoC example's detail board. Rough coordinates, as models give them.",
+ "ops": [
+  {
+   "op": "addNode",
+   "node": {
+    "id": "uart_regs",
+    "title": "uart_regs",
+    "desc": "APB register interface",
+    "group": "uart",
+    "x": 280,
+    "y": 1460
+   }
+  },
+  {
+   "op": "addNode",
+   "node": {
+    "id": "baud_gen",
+    "title": "baud_gen",
+    "desc": "Baud rate generator",
+    "group": "uart",
+    "x": 390,
+    "y": 1460
+   }
+  },
+  {
+   "op": "addNode",
+   "node": {
+    "id": "tx_fifo",
+    "title": "tx_fifo",
+    "shape": "fifo",
+    "group": "uart",
+    "x": 280,
+    "y": 1505,
+    "w": 90,
+    "h": 35
+   }
+  },
+  {
+   "op": "addNode",
+   "node": {
+    "id": "rx_fifo",
+    "title": "rx_fifo",
+    "shape": "fifo",
+    "group": "uart",
+    "x": 390,
+    "y": 1505,
+    "w": 90,
+    "h": 35
+   }
+  },
+  {
+   "op": "addNode",
+   "node": {
+    "id": "uart_tx",
+    "title": "uart_tx",
+    "desc": "UART transmitter",
+    "group": "uart",
+    "x": 280,
+    "y": 1550
+   }
+  },
+  {
+   "op": "addNode",
+   "node": {
+    "id": "uart_rx",
+    "title": "uart_rx",
+    "desc": "UART receiver",
+    "group": "uart",
+    "x": 390,
+    "y": 1550
+   }
+  },
+  {
+   "op": "addNode",
+   "node": {
+    "id": "uart.o_tx_o",
+    "title": "o_tx",
+    "shape": "port-out",
+    "color": "teal",
+    "x": 600,
+    "y": 1470,
+    "w": 90,
+    "h": 26,
+    "port": {
+     "of": "uart",
+     "name": "o_tx",
+     "dir": "out"
+    },
+    "style": {
+     "fontSize": 11
+    },
+    "group": "uart"
+   }
+  },
+  {
+   "op": "addNode",
+   "node": {
+    "id": "uart.i_rx_i",
+    "title": "i_rx",
+    "shape": "port-in",
+    "color": "teal",
+    "x": 600,
+    "y": 1560,
+    "w": 90,
+    "h": 26,
+    "port": {
+     "of": "uart",
+     "name": "i_rx",
+     "dir": "in"
+    },
+    "style": {
+     "fontSize": 11
+    },
+    "group": "uart"
+   }
+  },
+  {
+   "op": "connect",
+   "from": "uart.i_axi_to_apb_bridge_i.INT",
+   "to": "uart_regs",
+   "kind": "bus",
+   "label": "APB access"
+  },
+  {
+   "op": "connect",
+   "from": "uart_regs",
+   "to": "tx_fifo",
+   "kind": "normal",
+   "label": "write data"
+  },
+  {
+   "op": "connect",
+   "from": "rx_fifo",
+   "to": "uart_regs",
+   "kind": "normal",
+   "label": "read data"
+  },
+  {
+   "op": "connect",
+   "from": "baud_gen",
+   "to": "uart_tx",
+   "kind": "clock",
+   "label": "tx baud tick"
+  },
+  {
+   "op": "connect",
+   "from": "baud_gen",
+   "to": "uart_rx",
+   "kind": "clock",
+   "label": "rx baud tick"
+  },
+  {
+   "op": "connect",
+   "from": "tx_fifo.OUT",
+   "to": "uart_tx",
+   "kind": "normal"
+  },
+  {
+   "op": "connect",
+   "from": "uart_rx",
+   "to": "rx_fifo.IN",
+   "kind": "normal"
+  },
+  {
+   "op": "connect",
+   "from": "uart_tx",
+   "to": "uart.o_tx_o.INT",
+   "kind": "normal",
+   "label": "tx line"
+  },
+  {
+   "op": "connect",
+   "from": "uart.i_rx_i.INT",
+   "to": "uart_rx",
+   "kind": "normal",
+   "label": "rx line"
+  }
+ ]
+}

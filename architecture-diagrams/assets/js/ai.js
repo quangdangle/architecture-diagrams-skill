@@ -102,7 +102,8 @@ var AI_OPS_DOC = [
   '- connect {from, to, kind, label, dir, route, points}: a wire. An end is a block id or "block.PIN" for a pin. disconnect / reverseEdge / updateEdge name a wire by {edge: index} or {from, to}.',
   '- addGroup {group: {id, label, color, parent, x, y, w, h}}, updateGroup {id, set}: frames.',
   '- addNote {note: {text, kind, attach}}: a sticky note; kind is note, constraint, reason, change, question, todo or legend; attach is a block or frame id or [from, to].',
-  '- updateNote {id, set}, removeNote {id}. updateDiagram {set: {layout, route, direction, title}}.'
+  '- updateNote {id, set}, removeNote {id}. updateDiagram {set: {layout, route, direction, title}}.',
+  '- tidyFrame {id}: lays out the blocks inside a frame in layers (signals left to right), lines its ports up with them and fits the frame. End with it after drawing the inside of a frame; then rough x, y are enough.'
 ].join('\n');
 var AI_SCHEMA = { type: 'object', properties: {
   ops: { type: 'array', items: { type: 'object' } },
@@ -181,6 +182,7 @@ function aiRun(request, targets, box) {
       if (!ops.length) return done([]);
       /* cards take the tool's own size: a model's guess at pixels makes text overflow and blocks overlap */
       ops = ops.map(function (o) { if (o && o.op === 'addNode' && o.node && !o.node.shape) { o = edClone(o); delete o.node.w; delete o.node.h; } return o; });
+      ops = ops.concat(aiTidyOps(cur.diagrams[di], ops));
       var r = asApplyOps(cur, di, ops, st);
       if (r.errors.length) {
         if (round >= 2) return done([aiL('eOps', r.errors.slice(0, 3).join(' · '))]);
@@ -217,6 +219,20 @@ function aiRun(request, targets, box) {
     aiSay(box, text, true);
     aiLog({ request: request, targets: targets, state: 'failed', error: text });
   });
+}
+/* A frame that had nothing drawn inside and gets two or more blocks is laid out afterwards (models are poor at pixel
+   sums), unless the answer already ends with tidyFrame for it. */
+function aiTidyOps(d, ops) {
+  var groups = asGroupIds(d), count = {}, asked = {};
+  ops.forEach(function (o) {
+    if (o && o.op === 'addNode' && o.node && str(o.node.group) && !o.node.port) count[str(o.node.group)] = (count[str(o.node.group)] || 0) + 1;
+    if (o && o.op === 'tidyFrame') asked[str(o.id)] = true;
+  });
+  return Object.keys(count).filter(function (gid) {
+    var g = groups[gid];
+    return count[gid] >= 2 && !asked[gid] && g && finiteNum(g.x) !== null && +g.w > 0 &&
+      !(d.nodes || []).some(function (n) { return n && str(n.group) === gid && !n.port; });
+  }).map(function (gid) { return { op: 'tidyFrame', id: gid }; });
 }
 function aiFinished(box, stillBusy) {
   if (!stillBusy && ED) ED.aiBusy = false;

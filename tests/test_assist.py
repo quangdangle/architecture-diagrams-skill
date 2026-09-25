@@ -348,6 +348,41 @@ class DetailBoards(unittest.TestCase):
         self.assertEqual(names, ["i_irq_gpio", "i_irq_uart"])
         self.assertFalse([c for c in result["checks"] if "receives" in c["text"]], result["checks"])
 
+    def test_tidy_lays_out_an_ai_drawing_inside_its_frame(self):
+        spec = json.loads((SKILL / "examples" / "soc-block-diagram.json").read_text(encoding="utf-8"))
+        board = assist.build_board(spec)
+        tab = board["board"]
+        before = {g["id"]: g for g in [d for d in board["spec"]["diagrams"] if d.get("id") == tab][0]["groups"] if g.get("source")}
+        ops = json.loads((ROOT / "tests" / "fixtures" / "uart_inside_ops.json").read_text(encoding="utf-8"))["ops"]
+        result = assist.apply_ops(board["spec"], ops + [{"op": "tidyFrame", "id": "uart"}], diagram=tab)
+        self.assertFalse([c for c in result["checks"] if not c.get("soft")], result["checks"])
+        d = [x for x in result["spec"]["diagrams"] if x.get("id") == tab][0]
+        frames = {g["id"]: g for g in d["groups"] if g.get("source")}
+        f = frames["uart"]
+        inside = [n for n in d["nodes"] if n.get("group") == "uart" and not n.get("port")]
+        self.assertEqual(len(inside), 6)
+        boxes = []
+        for n in inside:
+            w, h = (216, 70) if not n.get("shape") else (n.get("w", 80), n.get("h", 40))
+            self.assertTrue(f["x"] < n["x"] and n["x"] + w < f["x"] + f["w"] and f["y"] < n["y"] and n["y"] + h < f["y"] + f["h"], (n, f))
+            boxes.append((n["x"], n["y"], w, h, n["id"]))
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1:]:
+                self.assertFalse(a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3], (a, b))
+        # the new serial ports follow the RTL habit, and their inner wires stay on the inner pin
+        ports = {n["port"]["name"]: n for n in d["nodes"] if n.get("port", {}).get("of") == "uart"}
+        self.assertLess(ports["i_rx"]["x"], f["x"] + 10)
+        self.assertGreater(ports["o_tx"]["x"], f["x"] + f["w"] - 60)
+        rx = [e for e in d["edges"] if e["from"] == ports["i_rx"]["id"]][0]
+        self.assertEqual(rx["fromAnchor"]["x"], 1, rx)
+        self.assertFalse([c for c in result["checks"] if "not wired inside" in c["text"]], result["checks"])
+        # room is made the way an editor inserts space: the row keeps its order and its line
+        row = ["qspi", "gpio", "plic"]
+        self.assertEqual([frames[k]["y"] for k in row], [before[k]["y"] for k in row])
+        xs = [frames[k]["x"] for k in ["uart"] + row]
+        self.assertEqual(xs, sorted(xs))
+        self.assertGreaterEqual(frames["qspi"]["x"], f["x"] + f["w"] + 40)
+
     def test_inside_tab_gets_the_frame_ports(self):
         spec = json.loads((SKILL / "examples" / "soc-block-diagram.json").read_text(encoding="utf-8"))
         board = assist.build_board(spec)

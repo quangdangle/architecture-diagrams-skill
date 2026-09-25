@@ -16,7 +16,9 @@ var HT = {
     iPortFree: 'Port {x} of {y} is not wired inside yet.', iNoBoard: 'Tab {x}, which this detail board comes from, is missing.',
     iNoDetail: 'Block {x} links to tab {y}, which is missing.', iPortMismatch: 'Port {x} is on {y} but not in tab {z}.',
     noteAdd: 'Note', noteAddTitle: 'Add a sticky note to what is selected (key N)', noteNew: 'New note',
-    notes: 'Notes', noteText: 'Text', noteKind: 'Kind', noteAttach: 'About', noteDate: 'Date', noteBy: 'By', noteWhen: 'Date and author', noteFree: '(free on the drawing)',
+    notes: 'Notes', noteText: 'Text', noteKind: 'Kind', noteAttach: 'About', noteDate: 'Date', noteBy: 'By', noteWhen: 'Date and author',
+    tidy: 'Tidy inside', tidyTitle: 'Lay out the blocks inside this frame, signals left to right, and fit the frame to them', lTidy: 'Tidy inside {x}',
+    eTidyNone: 'no frame {x}', eTidyBox: 'frame {x} has no fixed place and size (x, y, w, h) to lay out in', noteFree: '(free on the drawing)',
     noteDel: 'Delete this note', noteIdeas: 'Notes to add', noteIdeasTitle: 'Notes written from this diagram: click one to add it, then edit the text',
     lNoteAdd: 'Note added', lNoteEdit: 'Note edited', lNoteDel: 'Note deleted', lNoteMove: 'Note moved',
     ideaCdc: 'Signal {x} crosses from the {y} clock domain into {z}: it needs a synchronizer (2 flip-flops for one bit, an asynchronous FIFO for data).',
@@ -46,7 +48,9 @@ var HT = {
     iPortFree: 'Cổng {x} của {y} chưa nối vào bên trong.', iNoBoard: 'Không thấy tab {x}, là tab tổng quan của bảng chi tiết này.',
     iNoDetail: 'Khối {x} trỏ tới tab {y}, nhưng không thấy tab đó.', iPortMismatch: 'Cổng {x} có trên {y} nhưng chưa có trong tab {z}.',
     noteAdd: 'Ghi chú', noteAddTitle: 'Thêm ghi chú dán cho phần đang chọn (phím N)', noteNew: 'Ghi chú mới',
-    notes: 'Ghi chú', noteText: 'Nội dung', noteKind: 'Loại', noteAttach: 'Gắn với', noteDate: 'Ngày', noteBy: 'Người ghi', noteWhen: 'Ngày và người ghi', noteFree: '(đặt tự do trên hình)',
+    notes: 'Ghi chú', noteText: 'Nội dung', noteKind: 'Loại', noteAttach: 'Gắn với', noteDate: 'Ngày', noteBy: 'Người ghi', noteWhen: 'Ngày và người ghi',
+    tidy: 'Sắp lại bên trong', tidyTitle: 'Xếp lại các khối trong khung, tín hiệu đi từ trái sang phải, và nới khung cho vừa', lTidy: 'Sắp lại bên trong {x}',
+    eTidyNone: 'không có khung {x}', eTidyBox: 'khung {x} chưa có vị trí và kích thước cố định (x, y, w, h) để xếp', noteFree: '(đặt tự do trên hình)',
     noteDel: 'Xoá ghi chú này', noteIdeas: 'Ghi chú nên thêm', noteIdeasTitle: 'Ghi chú soạn sẵn từ chính sơ đồ: bấm để thêm, rồi sửa lại chữ',
     lNoteAdd: 'Thêm ghi chú', lNoteEdit: 'Sửa ghi chú', lNoteDel: 'Xoá ghi chú', lNoteMove: 'Dời ghi chú',
     ideaCdc: 'Tín hiệu {x} đi từ miền clock {y} sang miền {z}: cần mạch đồng bộ (2 flip-flop cho tín hiệu 1 bit, FIFO bất đồng bộ cho dữ liệu nhiều bit).',
@@ -486,11 +490,16 @@ function hierFrameClash(board) {
 function hierMovePort(board, pid, side) {
   var n = asNodes(board)[pid], frame = n && n.port ? asGroupIds(board)[str(n.port.of)] : null;
   if (!frame) return;
+  var gid = str(frame.id), nodes = asNodes(board);
+  /* a wire to a block drawn in the frame uses the inner pin, any other wire the outer one */
+  var inner = function (id) { var x = nodes[id]; return !!x && !x.port && str(x.group) === gid; };
   board.nodes = board.nodes.filter(function (x) { return x !== n; });
   var m = hierAddPort(board, frame, { name: str(n.port.name), dir: str(n.port.dir), kind: n.port.kind || null }, side, pid);
+  ['title', 'desc'].forEach(function (k) { if (n[k] !== undefined) m[k] = n[k]; });
   (board.edges || []).forEach(function (e) {
-    if (str(e.from) === pid) e.fromAnchor = hierExt(m);
-    if (str(e.to) === pid) e.toAnchor = hierExt(m);
+    if (!e) return;
+    if (str(e.from) === pid) { e.fromAnchor = inner(str(e.to)) ? hierInt(m) : hierExt(m); delete e.points; }
+    if (str(e.to) === pid) { e.toAnchor = inner(str(e.from)) ? hierInt(m) : hierExt(m); delete e.points; }
   });
 }
 function hierUntangle(board) {
@@ -949,6 +958,7 @@ function hierAttachOk(d, att) {
   if (Array.isArray(att)) return att.length === 2 && (d.edges || []).some(function (e) { return e && str(e.from) === str(att[0]) && str(e.to) === str(att[1]); });
   return !!(asNodes(d)[str(att)] || asGroupIds(d)[str(att)]);
 }
+AS_OPS.tidyFrame = function (d, op) { return hierTidyFrame(d, str(op.id)); };
 AS_OPS.addNote = function (d, op, touched) {
   var q = op.note && typeof op.note === 'object' ? op.note : null;
   if (!q || !str(asText(q.text))) return lang === 'vi' ? 'ghi chú cần có nội dung (text)' : 'a note needs text';
@@ -1409,6 +1419,8 @@ function hierActionBar(st, targets) {
       var link = (g && str(g.detail)) || (n && str(n.detail));
       if (link) btn('▸ ' + ht('openInside'), ht('openInside'), function () { goToTab(link); });
       else if ((g && str(g.source)) || (n && !n.port && !str(d.boardOf) && !d.detailOf && hierIsGraph(d))) btn('▸ ' + ht('inside'), ht('insideTitle'), function () { hierOpenInsideNow(one); });
+      if (g && finiteNum(g.x) !== null && (d.nodes || []).some(function (x) { return x && str(x.group) === one && !x.port; }))
+        btn('⟲ ' + ht('tidy'), ht('tidyTitle'), function () { edRunOps([{ op: 'tidyFrame', id: one }], hl('lTidy', hq(str(asText(g.label)) || one)), null); });
     }
   }
   /* above the top-right corner of what is selected */
@@ -1514,10 +1526,187 @@ function hierFitFrame(d, n, g) {
   }
   n.x = Math.round(spot.x / 10) * 10;
   n.y = Math.round(spot.y / 10) * 10;
-  var grew = false;
-  if (n.x + s.w + pad > +g.x + +g.w) { g.w = Math.round((n.x + s.w + pad - +g.x) / 10) * 10; grew = true; }
-  if (n.y + s.h + pad > +g.y + +g.h) { g.h = Math.round((n.y + s.h + pad - +g.y) / 10) * 10; grew = true; }
-  if (grew) hierPushAway(d, g);
+  hierGrowFrame(d, g, Math.max(+g.w, n.x + s.w + pad - +g.x), Math.max(+g.h, n.y + s.h + pad - +g.y));
+}
+/* A frame grows to at least w x h: the ports on its right and bottom borders move with them, and room is made the way
+   an editor inserts space: the frames to its right in the rows it spans move right by the growth, the frames under it
+   move down by it, so the rest of the board keeps its arrangement. Whatever still touches it is pushed away last. */
+function hierGrowFrame(d, g, w, h) {
+  var dw = Math.max(0, Math.ceil(w / 10) * 10 - +g.w), dh = Math.max(0, Math.ceil(h / 10) * 10 - +g.h);
+  if (!dw && !dh) return false;
+  var gid = str(g.id), old = hierFrameBox(g), mine = hierFrameMembers(d, gid), ancestors = {};
+  for (var up = str(g.parent), k = 0; up && k < 20; k++) { ancestors[up] = true; var pg = asGroupIds(d)[up]; up = pg ? str(pg.parent) : ''; }
+  hierPorts(d, gid).forEach(function (p) {
+    var side = hierPortSide(p);
+    if (side === 'right' && finiteNum(p.x) !== null) p.x = Math.round(+p.x + dw);
+    if (side === 'bottom' && finiteNum(p.y) !== null) p.y = Math.round(+p.y + dh);
+  });
+  g.w = +g.w + dw;
+  g.h = +g.h + dh;
+  var me = hierFrameBox(g), gap = HB.gap / 2, moved = [];
+  var groups = asGroupIds(d);
+  /* frames that qualify, without the ones inside another that qualifies (they move with it) */
+  var pick = function (test) {
+    var hit = (d.groups || []).filter(function (o) { return o && o !== g && !mine[str(o.id)] && !ancestors[str(o.id)] && str(o.source) && finiteNum(o.x) !== null && test(hierFrameBox(o)); });
+    var ids = {};
+    hit.forEach(function (o) { ids[str(o.id)] = true; });
+    return hit.filter(function (o) {
+      for (var up = str(o.parent), n = 0; up && n < 20; n++) { if (ids[up]) return false; var q = groups[up]; up = q ? str(q.parent) : ''; }
+      return true;
+    });
+  };
+  if (dw) pick(function (b) { return b.x >= old.x + old.w - 1 && b.y < me.y + me.h + gap && b.y + b.h + gap > me.y; })
+    .forEach(function (o) { hierShiftFrame(d, str(o.id), dw, 0); moved.push(o); });
+  if (dh) pick(function (b) { return b.y >= old.y + old.h - 1 && b.x < me.x + me.w + gap && b.x + b.w + gap > me.x; })
+    .forEach(function (o) { hierShiftFrame(d, str(o.id), 0, dh); if (moved.indexOf(o) < 0) moved.push(o); });
+  var pinned = {};
+  pinned[gid] = true;
+  hierPushAway(d, g, 0, pinned);
+  moved.forEach(function (o) { hierPushAway(d, o, 1, pinned); });
+  return true;
+}
+
+/* ---------- tidying the inside of a frame: blocks in layers, signals from the frame's inputs to its outputs; the ports
+   then line up with the blocks they lead to, and the frame fits the drawing ---------- */
+function hierTidyFrame(d, gid) {
+  var g = asGroupIds(d)[gid];
+  if (!g) return hl('eTidyNone', hq(gid));
+  if (finiteNum(g.x) === null || finiteNum(g.y) === null || !(+g.w > 0) || !(+g.h > 0)) return hl('eTidyBox', hq(str(asText(g.label)) || gid));
+  var inside = (d.nodes || []).filter(function (n) { return n && str(n.group) === gid && !n.port; });
+  if (!inside.length) return null;
+  var ids = {}, ports = hierPorts(d, gid), pids = {}, size = {};
+  inside.forEach(function (n) { ids[str(n.id)] = true; size[str(n.id)] = hierRealSize(n); });
+  ports.forEach(function (p) { pids[str(p.id)] = true; });
+  /* a port with no wire to the rest of the board yet follows the RTL habit: inputs on the left, outputs on the right */
+  var outside = function (p) {
+    return (d.edges || []).some(function (e) {
+      if (!e) return false;
+      var a = str(e.from), b = str(e.to);
+      return (a === str(p.id) && !ids[b] && !pids[b]) || (b === str(p.id) && !ids[a] && !pids[a]);
+    });
+  };
+  ports.forEach(function (p) {
+    if (outside(p)) return;
+    var dir = str(p.port && p.port.dir), side = hierPortSide(p), want = dir === 'in' ? 'left' : dir === 'out' ? 'right' : side;
+    if (want !== side) hierMovePort(d, str(p.id), want);
+  });
+  ports = hierPorts(d, gid);
+  var wires = (d.edges || []).filter(function (e) { return e && (ids[str(e.from)] || pids[str(e.from)]) && (ids[str(e.to)] || pids[str(e.to)]) && str(e.from) !== str(e.to) && !(pids[str(e.from)] && pids[str(e.to)]); });
+  var pos = hierLayers(inside, ports, wires, size);
+  var bx = Infinity, by = Infinity, bx2 = -Infinity, by2 = -Infinity;
+  inside.forEach(function (n) { var p = pos[str(n.id)], z = size[str(n.id)]; bx = Math.min(bx, p.x); by = Math.min(by, p.y); bx2 = Math.max(bx2, p.x + z.w); by2 = Math.max(by2, p.y + z.h); });
+  /* room kept clear of the ports, which reach into the frame from its border */
+  var reach = { left: 0, right: 0, top: 0, bottom: 0 };
+  ports.forEach(function (p) {
+    var side = hierPortSide(p), z = hierRealSize(p);
+    if (side === 'left') reach.left = Math.max(reach.left, +p.x + z.w - +g.x);
+    if (side === 'right') reach.right = Math.max(reach.right, +g.x + +g.w - +p.x);
+    if (side === 'top') reach.top = Math.max(reach.top, +p.y + z.h - +g.y);
+    if (side === 'bottom') reach.bottom = Math.max(reach.bottom, +g.y + +g.h - +p.y);
+  });
+  /* and room for the labels of the wires between those ports and the blocks */
+  var room = { left: 0, right: 0, top: 0, bottom: 0 }, nodesNow = asNodes(d);
+  wires.forEach(function (e) {
+    var lab = str(asText(e.label)), pid = pids[str(e.from)] ? str(e.from) : pids[str(e.to)] ? str(e.to) : null;
+    if (!lab || !pid || !nodesNow[pid]) return;
+    var side = hierPortSide(nodesNow[pid]);
+    room[side] = Math.max(room[side], side === 'left' || side === 'right' ? textWidth(lab, 11, 600) + 24 : 26);
+  });
+  var mL = Math.max(40, reach.left + 30 + room.left), mR = Math.max(40, reach.right + 30 + room.right);
+  var mT = Math.max(HB.top, reach.top + 30 + room.top), mB = Math.max(36, reach.bottom + 30 + room.bottom);
+  var needW = mL + (bx2 - bx) + mR, needH = mT + (by2 - by) + mB;
+  hierGrowFrame(d, g, Math.max(+g.w, needW), Math.max(+g.h, needH));
+  var ox = +g.x + mL + Math.max(0, (+g.w - needW) / 2) - bx, oy = +g.y + mT + Math.max(0, (+g.h - needH) / 2) - by;
+  inside.forEach(function (n) { var p = pos[str(n.id)]; n.x = Math.round((ox + p.x) / 10) * 10; n.y = Math.round((oy + p.y) / 10) * 10; });
+  wires.forEach(function (e) { delete e.points; });
+  hierAlignPorts(d, g, ports, wires, ids, size);
+  return null;
+}
+/* Columns by distance from the frame's inputs (wires followed both ways, so a loop through a register block stays
+   compact instead of stretching into one long row), each column ordered after the blocks it connects to on its left. */
+function hierLayers(inside, ports, wires, size) {
+  var ids = inside.map(function (n) { return str(n.id); }), nb = {}, into = {}, portDir = {};
+  ids.forEach(function (id) { nb[id] = []; into[id] = 0; });
+  ports.forEach(function (p) { portDir[str(p.id)] = str(p.port && p.port.dir) || 'inout'; });
+  var fromIn = {}, toOut = {}, labelW = 0;
+  wires.forEach(function (e) {
+    var a = str(e.from), b = str(e.to), lab = str(asText(e.label));
+    if (lab) labelW = Math.max(labelW, textWidth(lab, 11, 600) + 16);
+    if (nb[a] && nb[b]) { nb[a].push(b); nb[b].push(a); into[b]++; return; }
+    if (portDir[a] && nb[b] && portDir[a] !== 'out') fromIn[b] = true;
+    if (portDir[b] && nb[a] && portDir[b] === 'in') fromIn[a] = true;
+    if (portDir[b] && nb[a] && portDir[b] === 'out') toOut[a] = true;
+    if (portDir[a] && nb[b] && portDir[a] === 'out') toOut[b] = true;
+  });
+  var rank = {}, queue = [];
+  var seed = function (list) { list.forEach(function (id) { if (rank[id] === undefined) { rank[id] = 0; queue.push(id); } }); };
+  seed(ids.filter(function (id) { return fromIn[id]; }));
+  if (!queue.length) seed(ids.filter(function (id) { return !into[id] && !toOut[id]; }));
+  if (!queue.length) seed(ids.slice(0, 1));
+  for (;;) {
+    while (queue.length) {
+      var id = queue.shift();
+      nb[id].forEach(function (m) { if (rank[m] === undefined) { rank[m] = rank[id] + 1; queue.push(m); } });
+    }
+    var rest = ids.filter(function (x) { return rank[x] === undefined; });
+    if (!rest.length) break;
+    seed(rest.slice(0, 1));
+  }
+  var cols = [];
+  ids.forEach(function (id) { (cols[rank[id]] = cols[rank[id]] || []).push(id); });
+  cols = cols.filter(Boolean);
+  /* order each column by the mean place of its neighbours in the columns before and after it, twice each way */
+  var place = {};
+  var setPlaces = function () { cols.forEach(function (c) { c.forEach(function (id, k) { place[id] = k; }); }); };
+  setPlaces();
+  var sweep = function (c, side) {
+    var col = cols[c], other = cols[c + side];
+    if (!other) return;
+    var inOther = {};
+    other.forEach(function (id) { inOther[id] = true; });
+    var key = function (id) { var ms = nb[id].filter(function (m) { return inOther[m]; }); return ms.length ? ms.reduce(function (t, m) { return t + place[m]; }, 0) / ms.length : place[id]; };
+    col.sort(function (a, b) { return key(a) - key(b); });
+    setPlaces();
+  };
+  for (var pass = 0; pass < 2; pass++) {
+    for (var c = 1; c < cols.length; c++) sweep(c, -1);
+    for (var c2 = cols.length - 2; c2 >= 0; c2--) sweep(c2, 1);
+  }
+  var gapX = Math.max(70, Math.min(170, labelW + 24)), gapY = 36, x = 0, heights = [], pos = {};
+  cols.forEach(function (col) { heights.push(col.reduce(function (t, id) { return t + size[id].h; }, 0) + gapY * (col.length - 1)); });
+  var tall = Math.max.apply(null, heights);
+  cols.forEach(function (col, k) {
+    var w = Math.max.apply(null, col.map(function (id) { return size[id].w; })), y = (tall - heights[k]) / 2;
+    col.forEach(function (id) { pos[id] = { x: x + (w - size[id].w) / 2, y: y }; y += size[id].h + gapY; });
+    x += w + gapX;
+  });
+  return pos;
+}
+/* Each port slides along its side to face the block it leads to, keeping clear of the other ports on that side. */
+function hierAlignPorts(d, g, ports, wires, ids, size) {
+  var nodes = asNodes(d), bySide = { left: [], right: [], top: [], bottom: [] };
+  ports.forEach(function (p) {
+    var mate = null;
+    wires.forEach(function (e) {
+      if (mate) return;
+      if (str(e.from) === str(p.id) && ids[str(e.to)]) mate = nodes[str(e.to)];
+      else if (str(e.to) === str(p.id) && ids[str(e.from)]) mate = nodes[str(e.from)];
+    });
+    var side = hierPortSide(p), z = hierRealSize(p), vertical = side === 'top' || side === 'bottom';
+    var want = mate ? (vertical ? +mate.x + size[str(mate.id)].w / 2 - z.w / 2 : +mate.y + size[str(mate.id)].h / 2 - z.h / 2) : (vertical ? +p.x : +p.y);
+    bySide[side].push({ p: p, z: z, want: want });
+  });
+  Object.keys(bySide).forEach(function (side) {
+    var list = bySide[side], vertical = side === 'top' || side === 'bottom';
+    if (!list.length) return;
+    list.sort(function (a, b) { return a.want - b.want; });
+    var lo = vertical ? +g.x + (side === 'top' ? hierChipW(str(asText(g.label)) || str(g.id)) + 10 : 20) : +g.y + 30;
+    var hi = vertical ? +g.x + +g.w - 20 : +g.y + +g.h - 20;
+    var len = function (q) { return vertical ? q.z.w : q.z.h; }, gap = vertical ? 16 : 10, at = [];
+    list.forEach(function (q, k) { at[k] = Math.max(q.want, lo, k ? at[k - 1] + len(list[k - 1]) + gap : lo); });
+    for (var k = list.length - 1; k >= 0; k--) at[k] = Math.min(at[k], (k < list.length - 1 ? at[k + 1] - gap : hi) - len(list[k]));
+    list.forEach(function (q, k) { if (vertical) q.p.x = Math.round(Math.max(at[k], lo) / 2) * 2; else q.p.y = Math.round(Math.max(at[k], lo) / 2) * 2; });
+  });
 }
 /* Frames a growing frame now covers move out of its way (down, or right when they sit beside it), with their ports and insides. */
 function hierFrameMembers(d, gid) {
@@ -1539,19 +1728,25 @@ function hierShiftFrame(d, gid, dx, dy) {
     else if (a || b) delete e.points;
   });
 }
-function hierPushAway(d, g, depth) {
+function hierPushAway(d, g, depth, pinned) {
   if ((depth || 0) > 6) return;
+  pinned = pinned || {};
+  pinned[str(g.id)] = true;
   var me = hierFrameBox(g), mine = hierFrameMembers(d, str(g.id)), gap = HB.gap / 2;
   var ancestors = {};
   for (var up = str(g.parent), k = 0; up && k < 20; k++) { ancestors[up] = true; var pg = asGroupIds(d)[up]; up = pg ? str(pg.parent) : ''; }
   (d.groups || []).forEach(function (o) {
-    if (!o || o === g || mine[str(o.id)] || ancestors[str(o.id)] || !str(o.source) || finiteNum(o.x) === null) return;
+    if (!o || o === g || pinned[str(o.id)] || mine[str(o.id)] || ancestors[str(o.id)] || !str(o.source) || finiteNum(o.x) === null) return;
     var b = hierFrameBox(o);
     if (!(b.x < me.x + me.w + gap && b.x + b.w + gap > me.x && b.y < me.y + me.h + gap && b.y + b.h + gap > me.y)) return;
-    var below = b.y + b.h / 2 >= me.y + me.h / 2, dy = below ? me.y + me.h + gap - b.y : 0, dx = below ? 0 : me.x + me.w + gap - b.x;
+    var needX = me.x + me.w + gap - b.x, needY = me.y + me.h + gap - b.y;
+    var right = b.x >= me.x + 10, down = b.y >= me.y + me.h / 2;
+    var toRight = right && (!down || needX <= needY);
+    if (!right && !down) toRight = needX <= needY;
+    var dx = toRight ? needX : 0, dy = toRight ? 0 : needY;
     if (dx <= 0 && dy <= 0) return;
-    hierShiftFrame(d, str(o.id), Math.max(0, Math.round(dx / 10) * 10), Math.max(0, Math.round(dy / 10) * 10));
-    hierPushAway(d, o, (depth || 0) + 1);
+    hierShiftFrame(d, str(o.id), Math.max(0, Math.ceil(dx / 10) * 10), Math.max(0, Math.ceil(dy / 10) * 10));
+    hierPushAway(d, o, (depth || 0) + 1, pinned);
   });
 }
 function hierPlacePort(d, n, g) {
@@ -1575,6 +1770,9 @@ AS_OPS.addNode = function (d, op, touched) {
   /* only the frames of a detail board (and frames drawn on one): other hand-placed groups keep what the op says */
   if (!str(g.source) && !str(d.boardOf) && !(d.detailOf && typeof d.detailOf === 'object')) return null;
   if (n.port) { hierPlacePort(d, n, g); return null; }
+  /* a tidyFrame later in the same batch lays the frame out: growing it block by block first would push its neighbours
+     further than the final drawing needs */
+  if (AS_LIST && AS_LIST.some(function (o) { return o && o.op === 'tidyFrame' && str(o.id) === gid; })) return null;
   hierFitFrame(d, n, g);
   return null;
 };

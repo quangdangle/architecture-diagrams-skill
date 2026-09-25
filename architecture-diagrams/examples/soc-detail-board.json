@@ -1,0 +1,1578 @@
+{
+  "title": "Edge-AI SoC: overview and detail board",
+  "subtitle": "The overview, and a detail board built from it: every block a frame with its ports; the UART drawn inside by the AI, with notes.",
+  "lang": "en",
+  "diagrams": [
+    {
+      "id": "blocks",
+      "title": "Block diagram",
+      "tag": "Hardware",
+      "summary": "Everything talks through one **AXI interconnect**: bus masters sit on top, memories and the APB bridge below it, slow peripherals behind the bridge. Use **Steps** to follow the boot sequence.",
+      "direction": "TB",
+      "groups": [
+        {
+          "id": "masters",
+          "label": "Bus masters",
+          "icon": "🧠",
+          "color": "blue"
+        },
+        {
+          "id": "fabric",
+          "label": "Interconnect",
+          "icon": "🔀",
+          "color": "slate"
+        },
+        {
+          "id": "memory",
+          "label": "Memory",
+          "icon": "💾",
+          "color": "amber"
+        },
+        {
+          "id": "periph",
+          "label": "Peripherals on APB",
+          "icon": "🔌",
+          "color": "teal"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "cpu",
+          "title": "RISC-V CPU cluster",
+          "icon": "🧠",
+          "desc": "Two 64-bit cores with L1 and L2 caches. Runs Linux and the control firmware.",
+          "color": "blue",
+          "group": "masters",
+          "size": "lg"
+        },
+        {
+          "id": "npu",
+          "title": "NPU",
+          "icon": "⚡",
+          "desc": "Neural-network accelerator. Streams weights and activations over AXI.",
+          "color": "violet",
+          "group": "masters",
+          "size": "lg"
+        },
+        {
+          "id": "dma",
+          "title": "DMA engine",
+          "icon": "🔁",
+          "desc": "Moves data between memory and devices so the CPU does not have to.",
+          "color": "blue",
+          "group": "masters"
+        },
+        {
+          "id": "axi",
+          "title": "AXI4 interconnect",
+          "icon": "🔀",
+          "desc": "Routes every read and write from the masters to memories and the APB bridge.",
+          "color": "slate",
+          "group": "fabric",
+          "size": "lg",
+          "ports": {
+            "in": [
+              "s_axi_cpu",
+              "s_axi_npu",
+              "s_axi_dma"
+            ],
+            "out": [
+              "m_axi_rom",
+              "m_axi_sram",
+              "m_axi_ddr",
+              "m_apb"
+            ]
+          }
+        },
+        {
+          "id": "apb",
+          "title": "AXI-to-APB bridge",
+          "icon": "🌉",
+          "desc": "Turns fast AXI transactions into simple APB accesses for slow devices.",
+          "color": "slate",
+          "group": "fabric"
+        },
+        {
+          "id": "rom",
+          "title": "Boot ROM",
+          "icon": "🔒",
+          "desc": "First code after reset. Checks and loads the bootloader.",
+          "color": "amber",
+          "group": "memory",
+          "size": "sm"
+        },
+        {
+          "id": "sram",
+          "title": "On-chip SRAM",
+          "icon": "🧊",
+          "desc": "2 MB low-latency scratchpad for NPU tiles.",
+          "color": "amber",
+          "group": "memory",
+          "size": "sm"
+        },
+        {
+          "id": "ddrc",
+          "title": "LPDDR4 controller",
+          "icon": "💾",
+          "desc": "Controller and PHY for the external DRAM.",
+          "color": "amber",
+          "group": "memory"
+        },
+        {
+          "id": "uart",
+          "title": "UART",
+          "icon": "⌨️",
+          "desc": "Debug console.",
+          "color": "teal",
+          "group": "periph",
+          "size": "sm"
+        },
+        {
+          "id": "qspi",
+          "title": "QSPI controller",
+          "icon": "📀",
+          "desc": "Reads the external boot flash.",
+          "color": "teal",
+          "group": "periph",
+          "size": "sm"
+        },
+        {
+          "id": "gpio",
+          "title": "GPIO",
+          "icon": "🎚️",
+          "desc": "Buttons, LEDs and board signals.",
+          "color": "teal",
+          "group": "periph",
+          "size": "sm"
+        },
+        {
+          "id": "plic",
+          "title": "Interrupt controller",
+          "icon": "🔔",
+          "desc": "Collects device interrupts and signals the CPU.",
+          "color": "teal",
+          "group": "periph",
+          "size": "sm"
+        },
+        {
+          "id": "flash",
+          "title": "QSPI flash",
+          "icon": "🗄️",
+          "desc": "Holds the bootloader and the firmware image.",
+          "color": "slate",
+          "external": true,
+          "size": "sm"
+        },
+        {
+          "id": "dram",
+          "title": "LPDDR4 DRAM",
+          "icon": "🧱",
+          "desc": "Up to 4 GB of main memory on the board.",
+          "color": "slate",
+          "external": true,
+          "size": "sm"
+        }
+      ],
+      "edges": [
+        {
+          "from": "cpu",
+          "to": "axi",
+          "label": "AXI master",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "npu",
+          "to": "axi",
+          "label": "256-bit AXI",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "dma",
+          "to": "axi",
+          "label": "AXI master",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "axi",
+          "to": "rom",
+          "label": "instruction fetch"
+        },
+        {
+          "from": "axi",
+          "to": "sram",
+          "kind": "storage"
+        },
+        {
+          "from": "axi",
+          "to": "ddrc",
+          "label": "128-bit AXI",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "axi",
+          "to": "apb",
+          "label": "slow accesses"
+        },
+        {
+          "from": "apb",
+          "to": "uart"
+        },
+        {
+          "from": "apb",
+          "to": "qspi"
+        },
+        {
+          "from": "apb",
+          "to": "gpio"
+        },
+        {
+          "from": "apb",
+          "to": "plic"
+        },
+        {
+          "from": "qspi",
+          "to": "flash",
+          "label": "QSPI bus"
+        },
+        {
+          "from": "ddrc",
+          "to": "dram",
+          "label": "LPDDR4 pins"
+        },
+        {
+          "from": "plic",
+          "to": "cpu",
+          "label": "IRQ",
+          "kind": "async"
+        }
+      ],
+      "steps": [
+        {
+          "node": "cpu",
+          "text": "Reset is released and the CPU starts fetching instructions."
+        },
+        {
+          "edge": [
+            "axi",
+            "rom"
+          ],
+          "text": "The first instructions come from the Boot ROM through the interconnect."
+        },
+        {
+          "edge": [
+            "qspi",
+            "flash"
+          ],
+          "text": "Boot ROM code reads the bootloader from the external QSPI flash."
+        },
+        {
+          "node": "ddrc",
+          "text": "The bootloader trains the LPDDR4 interface so the DRAM can be used."
+        },
+        {
+          "node": "npu",
+          "text": "Linux starts and hands AI workloads to the NPU, which streams data from DRAM and SRAM."
+        },
+        {
+          "edge": [
+            "plic",
+            "cpu"
+          ],
+          "text": "From then on, devices get the CPU's attention through the interrupt controller."
+        }
+      ],
+      "legend": {
+        "colors": {
+          "blue": "Processors",
+          "violet": "Accelerator",
+          "slate": "Bus and board parts",
+          "amber": "Memory",
+          "teal": "Peripherals"
+        },
+        "edges": {
+          "bus": "AXI bus (read and write)"
+        }
+      }
+    },
+    {
+      "id": "blocks-detail",
+      "title": "Detail: Block diagram",
+      "summary": "Every block of **Block diagram** is a frame here, with its ports on the border. Draw the inside of each block in its frame, by hand or with AI.",
+      "boardOf": "blocks",
+      "layout": "manual",
+      "route": "orthogonal",
+      "nodes": [
+        {
+          "id": "cpu.io_axi_master_io",
+          "title": "io_axi_master",
+          "shape": "port-io-v",
+          "color": "blue",
+          "x": 290,
+          "y": 313,
+          "w": 106,
+          "h": 34,
+          "port": {
+            "of": "cpu",
+            "name": "io_axi_master",
+            "dir": "inout",
+            "kind": "bus"
+          },
+          "style": {
+            "fontSize": 11,
+            "flipV": true
+          },
+          "group": "cpu"
+        },
+        {
+          "id": "cpu.i_irq_i",
+          "title": "i_irq",
+          "shape": "port-in-v",
+          "color": "blue",
+          "x": 416,
+          "y": 313,
+          "w": 84,
+          "h": 34,
+          "port": {
+            "of": "cpu",
+            "name": "i_irq",
+            "dir": "in",
+            "kind": "async"
+          },
+          "style": {
+            "fontSize": 11,
+            "flipV": true
+          },
+          "group": "cpu"
+        },
+        {
+          "id": "npu.io_256_bit_axi_io",
+          "title": "io_256_bit_axi",
+          "shape": "port-io-v",
+          "color": "violet",
+          "x": 1216,
+          "y": 313,
+          "w": 110,
+          "h": 34,
+          "port": {
+            "of": "npu",
+            "name": "io_256_bit_axi",
+            "dir": "inout",
+            "kind": "bus"
+          },
+          "style": {
+            "fontSize": 11,
+            "flipV": true
+          },
+          "group": "npu"
+        },
+        {
+          "id": "dma.io_axi_master_io",
+          "title": "io_axi_master",
+          "shape": "port-io",
+          "color": "blue",
+          "x": 1680,
+          "y": 212,
+          "w": 120,
+          "h": 26,
+          "port": {
+            "of": "dma",
+            "name": "io_axi_master",
+            "dir": "inout",
+            "kind": "bus"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "dma"
+        },
+        {
+          "id": "axi.s_axi_cpu_i",
+          "title": "s_axi_cpu",
+          "shape": "port-in",
+          "color": "slate",
+          "x": 1182,
+          "y": 708,
+          "w": 96,
+          "h": 26,
+          "port": {
+            "of": "axi",
+            "name": "s_axi_cpu",
+            "dir": "in",
+            "kind": "bus"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "axi"
+        },
+        {
+          "id": "axi.s_axi_dma_i",
+          "title": "s_axi_dma",
+          "shape": "port-in",
+          "color": "slate",
+          "x": 1560,
+          "y": 654,
+          "w": 100,
+          "h": 26,
+          "port": {
+            "of": "axi",
+            "name": "s_axi_dma",
+            "dir": "in",
+            "kind": "bus"
+          },
+          "style": {
+            "fontSize": 11,
+            "flipH": true
+          },
+          "group": "axi"
+        },
+        {
+          "id": "axi.m_axi_rom_o",
+          "title": "m_axi_rom",
+          "shape": "port-out",
+          "color": "slate",
+          "x": 1559,
+          "y": 690,
+          "w": 102,
+          "h": 26,
+          "port": {
+            "of": "axi",
+            "name": "m_axi_rom",
+            "dir": "out"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "axi"
+        },
+        {
+          "id": "axi.m_axi_sram_o",
+          "title": "m_axi_sram",
+          "shape": "port-out",
+          "color": "slate",
+          "x": 1556,
+          "y": 726,
+          "w": 108,
+          "h": 26,
+          "port": {
+            "of": "axi",
+            "name": "m_axi_sram",
+            "dir": "out",
+            "kind": "storage"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "axi"
+        },
+        {
+          "id": "axi.m_axi_ddr_o",
+          "title": "m_axi_ddr",
+          "shape": "port-out",
+          "color": "slate",
+          "x": 1560,
+          "y": 762,
+          "w": 100,
+          "h": 26,
+          "port": {
+            "of": "axi",
+            "name": "m_axi_ddr",
+            "dir": "out",
+            "kind": "bus"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "axi"
+        },
+        {
+          "id": "axi.s_axi_npu_i",
+          "title": "s_axi_npu",
+          "shape": "port-in-v",
+          "color": "slate",
+          "x": 1404,
+          "y": 553,
+          "w": 84,
+          "h": 34,
+          "port": {
+            "of": "axi",
+            "name": "s_axi_npu",
+            "dir": "in",
+            "kind": "bus"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "axi"
+        },
+        {
+          "id": "axi.m_apb_o",
+          "title": "m_apb",
+          "shape": "port-out-v",
+          "color": "slate",
+          "x": 1378,
+          "y": 823,
+          "w": 84,
+          "h": 34,
+          "port": {
+            "of": "axi",
+            "name": "m_apb",
+            "dir": "out"
+          },
+          "style": {
+            "fontSize": 11,
+            "flipV": true
+          },
+          "group": "axi"
+        },
+        {
+          "id": "apb.o_uart_o",
+          "title": "o_uart",
+          "shape": "port-out",
+          "color": "slate",
+          "x": 792,
+          "y": 1132,
+          "w": 96,
+          "h": 26,
+          "port": {
+            "of": "apb",
+            "name": "o_uart",
+            "dir": "out"
+          },
+          "style": {
+            "fontSize": 11,
+            "flipH": true
+          },
+          "group": "apb"
+        },
+        {
+          "id": "apb.o_interrupt_controller_o",
+          "title": "o_interrupt_controller",
+          "shape": "port-out",
+          "color": "slate",
+          "x": 1198,
+          "y": 1132,
+          "w": 164,
+          "h": 26,
+          "port": {
+            "of": "apb",
+            "name": "o_interrupt_controller",
+            "dir": "out"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "apb"
+        },
+        {
+          "id": "apb.i_slow_accesses_i",
+          "title": "i_slow_accesses",
+          "shape": "port-in-v",
+          "color": "slate",
+          "x": 1008,
+          "y": 993,
+          "w": 120,
+          "h": 34,
+          "port": {
+            "of": "apb",
+            "name": "i_slow_accesses",
+            "dir": "in"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "apb"
+        },
+        {
+          "id": "apb.o_qspi_controller_o",
+          "title": "o_qspi_controller",
+          "shape": "port-out-v",
+          "color": "slate",
+          "x": 946,
+          "y": 1233,
+          "w": 124,
+          "h": 34,
+          "port": {
+            "of": "apb",
+            "name": "o_qspi_controller",
+            "dir": "out"
+          },
+          "style": {
+            "fontSize": 11,
+            "flipV": true
+          },
+          "group": "apb"
+        },
+        {
+          "id": "apb.o_gpio_o",
+          "title": "o_gpio",
+          "shape": "port-out-v",
+          "color": "slate",
+          "x": 1090,
+          "y": 1233,
+          "w": 84,
+          "h": 34,
+          "port": {
+            "of": "apb",
+            "name": "o_gpio",
+            "dir": "out"
+          },
+          "style": {
+            "fontSize": 11,
+            "flipV": true
+          },
+          "group": "apb"
+        },
+        {
+          "id": "sram.i_axi4_interconnect_i",
+          "title": "i_axi4_interconnect",
+          "shape": "port-in-v",
+          "color": "amber",
+          "x": 2960,
+          "y": 993,
+          "w": 138,
+          "h": 34,
+          "port": {
+            "of": "sram",
+            "name": "i_axi4_interconnect",
+            "dir": "in",
+            "kind": "storage"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "sram"
+        },
+        {
+          "id": "ddrc.io_128_bit_axi_io",
+          "title": "io_128_bit_axi",
+          "shape": "port-io-v",
+          "color": "amber",
+          "x": 3520,
+          "y": 993,
+          "w": 106,
+          "h": 34,
+          "port": {
+            "of": "ddrc",
+            "name": "io_128_bit_axi",
+            "dir": "inout",
+            "kind": "bus"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "ddrc"
+        },
+        {
+          "id": "ddrc.o_lpddr4_pins_o",
+          "title": "o_lpddr4_pins",
+          "shape": "port-out-v",
+          "color": "amber",
+          "x": 3476,
+          "y": 1233,
+          "w": 108,
+          "h": 34,
+          "port": {
+            "of": "ddrc",
+            "name": "o_lpddr4_pins",
+            "dir": "out"
+          },
+          "style": {
+            "fontSize": 11,
+            "flipV": true
+          },
+          "group": "ddrc"
+        },
+        {
+          "id": "uart.i_axi_to_apb_bridge_i",
+          "title": "i_axi_to_apb_bridge",
+          "shape": "port-in-v",
+          "color": "teal",
+          "x": 438,
+          "y": 1403,
+          "w": 140,
+          "h": 34,
+          "port": {
+            "of": "uart",
+            "name": "i_axi_to_apb_bridge",
+            "dir": "in"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "uart"
+        },
+        {
+          "id": "qspi.i_axi_to_apb_bridge_i",
+          "title": "i_axi_to_apb_bridge",
+          "shape": "port-in-v",
+          "color": "teal",
+          "x": 1652,
+          "y": 1403,
+          "w": 140,
+          "h": 34,
+          "port": {
+            "of": "qspi",
+            "name": "i_axi_to_apb_bridge",
+            "dir": "in"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "qspi"
+        },
+        {
+          "id": "qspi.o_qspi_bus_o",
+          "title": "o_qspi_bus",
+          "shape": "port-out-v",
+          "color": "teal",
+          "x": 1636,
+          "y": 1643,
+          "w": 90,
+          "h": 34,
+          "port": {
+            "of": "qspi",
+            "name": "o_qspi_bus",
+            "dir": "out"
+          },
+          "style": {
+            "fontSize": 11,
+            "flipV": true
+          },
+          "group": "qspi"
+        },
+        {
+          "id": "gpio.i_axi_to_apb_bridge_i",
+          "title": "i_axi_to_apb_bridge",
+          "shape": "port-in-v",
+          "color": "teal",
+          "x": 2110,
+          "y": 1403,
+          "w": 140,
+          "h": 34,
+          "port": {
+            "of": "gpio",
+            "name": "i_axi_to_apb_bridge",
+            "dir": "in"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "gpio"
+        },
+        {
+          "id": "plic.o_irq_o",
+          "title": "o_irq",
+          "shape": "port-out-v",
+          "color": "teal",
+          "x": 2888,
+          "y": 1403,
+          "w": 84,
+          "h": 34,
+          "port": {
+            "of": "plic",
+            "name": "o_irq",
+            "dir": "out",
+            "kind": "async"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "plic"
+        },
+        {
+          "id": "plic.i_axi_to_apb_bridge_i",
+          "title": "i_axi_to_apb_bridge",
+          "shape": "port-in-v",
+          "color": "teal",
+          "x": 2992,
+          "y": 1403,
+          "w": 140,
+          "h": 34,
+          "port": {
+            "of": "plic",
+            "name": "i_axi_to_apb_bridge",
+            "dir": "in"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "plic"
+        },
+        {
+          "id": "flash.i_qspi_bus_i",
+          "title": "i_qspi_bus",
+          "shape": "port-in-v",
+          "color": "slate",
+          "x": 1636,
+          "y": 1743,
+          "w": 88,
+          "h": 34,
+          "port": {
+            "of": "flash",
+            "name": "i_qspi_bus",
+            "dir": "in"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "flash"
+        },
+        {
+          "id": "dram.i_lpddr4_pins_i",
+          "title": "i_lpddr4_pins",
+          "shape": "port-in-v",
+          "color": "slate",
+          "x": 4228,
+          "y": 1403,
+          "w": 104,
+          "h": 34,
+          "port": {
+            "of": "dram",
+            "name": "i_lpddr4_pins",
+            "dir": "in"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "dram"
+        },
+        {
+          "id": "rom.i_instruction_fetch_i",
+          "title": "i_instruction_fetch",
+          "shape": "port-in-v",
+          "color": "amber",
+          "x": 2456,
+          "y": 993,
+          "w": 132,
+          "h": 34,
+          "port": {
+            "of": "rom",
+            "name": "i_instruction_fetch",
+            "dir": "in"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "rom"
+        },
+        {
+          "id": "uart_regs",
+          "title": "uart_regs",
+          "desc": "APB register interface",
+          "group": "uart",
+          "x": 400,
+          "y": 1510
+        },
+        {
+          "id": "baud_gen",
+          "title": "baud_gen",
+          "desc": "Baud rate generator",
+          "group": "uart",
+          "x": 720,
+          "y": 1570
+        },
+        {
+          "id": "tx_fifo",
+          "title": "tx_fifo",
+          "shape": "fifo",
+          "group": "uart",
+          "x": 780,
+          "y": 1490,
+          "w": 90,
+          "h": 35
+        },
+        {
+          "id": "rx_fifo",
+          "title": "rx_fifo",
+          "shape": "fifo",
+          "group": "uart",
+          "x": 780,
+          "y": 1670,
+          "w": 90,
+          "h": 35
+        },
+        {
+          "id": "uart_tx",
+          "title": "uart_tx",
+          "desc": "UART transmitter",
+          "group": "uart",
+          "x": 1040,
+          "y": 1570
+        },
+        {
+          "id": "uart_rx",
+          "title": "uart_rx",
+          "desc": "UART receiver",
+          "group": "uart",
+          "x": 400,
+          "y": 1620
+        },
+        {
+          "id": "uart.o_tx_o",
+          "title": "o_tx",
+          "shape": "port-out",
+          "color": "teal",
+          "x": 1342,
+          "y": 1590,
+          "w": 96,
+          "h": 26,
+          "port": {
+            "of": "uart",
+            "name": "o_tx",
+            "dir": "out"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "uart"
+        },
+        {
+          "id": "uart.i_rx_i",
+          "title": "i_rx",
+          "shape": "port-in",
+          "color": "teal",
+          "x": 212,
+          "y": 1640,
+          "w": 96,
+          "h": 26,
+          "port": {
+            "of": "uart",
+            "name": "i_rx",
+            "dir": "in"
+          },
+          "style": {
+            "fontSize": 11
+          },
+          "group": "uart"
+        }
+      ],
+      "edges": [
+        {
+          "from": "cpu.io_axi_master_io",
+          "to": "axi.s_axi_cpu_i",
+          "fromAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0,
+            "y": 0.5,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "cpu>axi:AXI master",
+          "label": "AXI master",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "npu.io_256_bit_axi_io",
+          "to": "axi.s_axi_npu_i",
+          "fromAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "npu>axi:256-bit AXI",
+          "label": "256-bit AXI",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "dma.io_axi_master_io",
+          "to": "axi.s_axi_dma_i",
+          "fromAnchor": {
+            "x": 0,
+            "y": 0.5,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0,
+            "y": 0.5,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "dma>axi:AXI master",
+          "label": "AXI master",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "axi.m_axi_rom_o",
+          "to": "rom.i_instruction_fetch_i",
+          "fromAnchor": {
+            "x": 1,
+            "y": 0.5,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "axi>rom:instruction fetch",
+          "label": "instruction fetch"
+        },
+        {
+          "from": "axi.m_axi_sram_o",
+          "to": "sram.i_axi4_interconnect_i",
+          "fromAnchor": {
+            "x": 1,
+            "y": 0.5,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "axi>sram",
+          "kind": "storage"
+        },
+        {
+          "from": "axi.m_axi_ddr_o",
+          "to": "ddrc.io_128_bit_axi_io",
+          "fromAnchor": {
+            "x": 1,
+            "y": 0.5,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "axi>ddrc:128-bit AXI",
+          "label": "128-bit AXI",
+          "kind": "bus",
+          "dir": "both"
+        },
+        {
+          "from": "axi.m_apb_o",
+          "to": "apb.i_slow_accesses_i",
+          "fromAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "axi>apb:slow accesses",
+          "label": "slow accesses"
+        },
+        {
+          "from": "apb.o_uart_o",
+          "to": "uart.i_axi_to_apb_bridge_i",
+          "fromAnchor": {
+            "x": 1,
+            "y": 0.5,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "apb>uart"
+        },
+        {
+          "from": "apb.o_qspi_controller_o",
+          "to": "qspi.i_axi_to_apb_bridge_i",
+          "fromAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "apb>qspi"
+        },
+        {
+          "from": "apb.o_gpio_o",
+          "to": "gpio.i_axi_to_apb_bridge_i",
+          "fromAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "apb>gpio"
+        },
+        {
+          "from": "apb.o_interrupt_controller_o",
+          "to": "plic.i_axi_to_apb_bridge_i",
+          "fromAnchor": {
+            "x": 1,
+            "y": 0.5,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "apb>plic"
+        },
+        {
+          "from": "qspi.o_qspi_bus_o",
+          "to": "flash.i_qspi_bus_i",
+          "fromAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "qspi>flash:QSPI bus",
+          "label": "QSPI bus"
+        },
+        {
+          "from": "ddrc.o_lpddr4_pins_o",
+          "to": "dram.i_lpddr4_pins_i",
+          "fromAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "ddrc>dram:LPDDR4 pins",
+          "label": "LPDDR4 pins"
+        },
+        {
+          "from": "plic.o_irq_o",
+          "to": "cpu.i_irq_i",
+          "fromAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "toAnchor": {
+            "x": 0.5,
+            "y": 0,
+            "perimeter": false
+          },
+          "route": "orthogonal",
+          "source": "plic>cpu:IRQ",
+          "label": "IRQ",
+          "kind": "async"
+        },
+        {
+          "from": "uart.i_axi_to_apb_bridge_i",
+          "to": "uart_regs",
+          "fromAnchor": {
+            "x": 0.5,
+            "y": 1,
+            "perimeter": false
+          },
+          "label": "APB access",
+          "kind": "bus"
+        },
+        {
+          "from": "uart_regs",
+          "to": "tx_fifo",
+          "label": "write data",
+          "kind": "normal"
+        },
+        {
+          "from": "rx_fifo",
+          "to": "uart_regs",
+          "label": "read data",
+          "kind": "normal"
+        },
+        {
+          "from": "baud_gen",
+          "to": "uart_tx",
+          "label": "tx baud tick",
+          "kind": "clock"
+        },
+        {
+          "from": "baud_gen",
+          "to": "uart_rx",
+          "label": "rx baud tick",
+          "kind": "clock"
+        },
+        {
+          "from": "tx_fifo",
+          "to": "uart_tx",
+          "fromAnchor": {
+            "x": 1,
+            "y": 0.5,
+            "perimeter": false
+          },
+          "kind": "normal"
+        },
+        {
+          "from": "uart_rx",
+          "to": "rx_fifo",
+          "toAnchor": {
+            "x": 0,
+            "y": 0.5,
+            "perimeter": false
+          },
+          "kind": "normal"
+        },
+        {
+          "from": "uart_tx",
+          "to": "uart.o_tx_o",
+          "toAnchor": {
+            "x": 0,
+            "y": 0.5,
+            "perimeter": false
+          },
+          "label": "tx line",
+          "kind": "normal"
+        },
+        {
+          "from": "uart.i_rx_i",
+          "to": "uart_rx",
+          "fromAnchor": {
+            "x": 1,
+            "y": 0.5,
+            "perimeter": false
+          },
+          "label": "rx line",
+          "kind": "normal"
+        }
+      ],
+      "groups": [
+        {
+          "id": "masters",
+          "label": "Bus masters",
+          "color": "blue",
+          "icon": "🧠"
+        },
+        {
+          "id": "fabric",
+          "label": "Interconnect",
+          "color": "slate",
+          "icon": "🔀"
+        },
+        {
+          "id": "memory",
+          "label": "Memory",
+          "color": "amber",
+          "icon": "💾"
+        },
+        {
+          "id": "periph",
+          "label": "Peripherals on APB",
+          "color": "teal",
+          "icon": "🔌"
+        },
+        {
+          "id": "cpu",
+          "label": "RISC-V CPU cluster",
+          "color": "blue",
+          "source": "cpu",
+          "x": 180,
+          "y": 90,
+          "w": 430,
+          "h": 240,
+          "icon": "🧠",
+          "parent": "masters"
+        },
+        {
+          "id": "npu",
+          "label": "NPU",
+          "color": "violet",
+          "source": "npu",
+          "x": 1080,
+          "y": 90,
+          "w": 380,
+          "h": 240,
+          "icon": "⚡",
+          "parent": "masters"
+        },
+        {
+          "id": "dma",
+          "label": "DMA engine",
+          "color": "blue",
+          "source": "dma",
+          "x": 1740,
+          "y": 90,
+          "w": 380,
+          "h": 240,
+          "icon": "🔁",
+          "parent": "masters"
+        },
+        {
+          "id": "axi",
+          "label": "AXI4 interconnect",
+          "color": "slate",
+          "source": "axi",
+          "x": 1230,
+          "y": 570,
+          "w": 380,
+          "h": 270,
+          "icon": "🔀",
+          "parent": "fabric"
+        },
+        {
+          "id": "apb",
+          "label": "AXI-to-APB bridge",
+          "color": "slate",
+          "source": "apb",
+          "x": 840,
+          "y": 1010,
+          "w": 440,
+          "h": 240,
+          "icon": "🌉",
+          "parent": "fabric"
+        },
+        {
+          "id": "rom",
+          "label": "Boot ROM",
+          "color": "amber",
+          "source": "rom",
+          "x": 2340,
+          "y": 1010,
+          "w": 380,
+          "h": 240,
+          "icon": "🔒",
+          "parent": "memory"
+        },
+        {
+          "id": "sram",
+          "label": "On-chip SRAM",
+          "color": "amber",
+          "source": "sram",
+          "x": 2820,
+          "y": 1010,
+          "w": 380,
+          "h": 240,
+          "icon": "🧊",
+          "parent": "memory"
+        },
+        {
+          "id": "ddrc",
+          "label": "LPDDR4 controller",
+          "color": "amber",
+          "source": "ddrc",
+          "x": 3340,
+          "y": 1010,
+          "w": 380,
+          "h": 240,
+          "icon": "💾",
+          "parent": "memory"
+        },
+        {
+          "id": "uart",
+          "label": "UART",
+          "color": "teal",
+          "source": "uart",
+          "x": 260,
+          "y": 1420,
+          "w": 1130,
+          "h": 320,
+          "icon": "⌨️",
+          "parent": "periph"
+        },
+        {
+          "id": "qspi",
+          "label": "QSPI controller",
+          "color": "teal",
+          "source": "qspi",
+          "x": 1490,
+          "y": 1420,
+          "w": 380,
+          "h": 240,
+          "icon": "📀",
+          "parent": "periph"
+        },
+        {
+          "id": "gpio",
+          "label": "GPIO",
+          "color": "teal",
+          "source": "gpio",
+          "x": 1990,
+          "y": 1420,
+          "w": 380,
+          "h": 240,
+          "icon": "🎚️",
+          "parent": "periph"
+        },
+        {
+          "id": "plic",
+          "label": "Interrupt controller",
+          "color": "teal",
+          "source": "plic",
+          "x": 2690,
+          "y": 1420,
+          "w": 480,
+          "h": 240,
+          "icon": "🔔",
+          "parent": "periph"
+        },
+        {
+          "id": "flash",
+          "label": "QSPI flash",
+          "color": "slate",
+          "source": "flash",
+          "x": 1490,
+          "y": 1760,
+          "w": 380,
+          "h": 240,
+          "icon": "🗄️"
+        },
+        {
+          "id": "dram",
+          "label": "LPDDR4 DRAM",
+          "color": "slate",
+          "source": "dram",
+          "x": 4090,
+          "y": 1420,
+          "w": 380,
+          "h": 240,
+          "icon": "🧱"
+        }
+      ],
+      "legend": {
+        "colors": {
+          "blue": "Processors",
+          "violet": "Accelerator",
+          "slate": "Bus and board parts",
+          "amber": "Memory",
+          "teal": "Peripherals"
+        },
+        "edges": {
+          "bus": "AXI bus (read and write)"
+        }
+      },
+      "notes": [
+        {
+          "id": "n1",
+          "text": "Drew the inside of the UART: register interface, baud generator, TX/RX FIFOs, transmitter and receiver, wired to the APB port, with two serial ports o_tx and i_rx on the frame.\nRequest: draw the inside of this block from its ports",
+          "kind": "change",
+          "attach": "uart",
+          "date": "2026-09-25",
+          "by": "AI"
+        },
+        {
+          "id": "n2",
+          "text": "FIFO depth 16 bytes each; the RX FIFO raises an interrupt at half full.",
+          "kind": "constraint",
+          "attach": "rx_fifo",
+          "date": "2026-09-25"
+        },
+        {
+          "id": "n3",
+          "text": "Does the DMA engine need its own APB port for its registers?",
+          "kind": "question",
+          "attach": "dma",
+          "date": "2026-09-25"
+        }
+      ]
+    },
+    {
+      "id": "memory",
+      "type": "memory",
+      "title": "Address map",
+      "tag": "Memory map",
+      "summary": "Where each block lives in the 32-bit address space. Unmapped holes are hatched; any access there returns a bus error.",
+      "regions": [
+        {
+          "name": "Boot ROM",
+          "base": "0x0000_0000",
+          "size": "64KB",
+          "desc": "Read-only, first code after reset.",
+          "color": "amber"
+        },
+        {
+          "name": "On-chip SRAM",
+          "base": "0x1000_0000",
+          "size": "2MB",
+          "desc": "Scratchpad for NPU tiles.",
+          "color": "amber"
+        },
+        {
+          "name": "UART0",
+          "base": "0x4000_0000",
+          "size": "4KB",
+          "desc": "Debug console registers.",
+          "color": "teal"
+        },
+        {
+          "name": "QSPI",
+          "base": "0x4000_1000",
+          "size": "4KB",
+          "desc": "Boot flash controller.",
+          "color": "teal"
+        },
+        {
+          "name": "GPIO",
+          "base": "0x4000_2000",
+          "size": "4KB",
+          "color": "teal"
+        },
+        {
+          "name": "Interrupt controller",
+          "base": "0x4800_0000",
+          "size": "64MB",
+          "desc": "PLIC priority, pending and claim registers.",
+          "color": "teal"
+        },
+        {
+          "name": "NPU registers",
+          "base": "0x5000_0000",
+          "size": "4KB",
+          "desc": "Job queue and status.",
+          "color": "violet"
+        },
+        {
+          "name": "LPDDR4 DRAM",
+          "base": "0x8000_0000",
+          "size": "2GB",
+          "desc": "Main memory.",
+          "color": "blue"
+        }
+      ],
+      "legend": {
+        "colors": {
+          "amber": "On-chip memory",
+          "teal": "Peripherals",
+          "violet": "Accelerator",
+          "blue": "External DRAM"
+        }
+      }
+    }
+  ]
+}

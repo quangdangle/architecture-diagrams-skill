@@ -607,11 +607,12 @@ var AS_OPS = {
   }
 };
 /* Applies ops to a copy of the document. Nothing changes when one op fails; the errors say which and why. */
-var AS_ST = null, AS_DOC = null;
+var AS_ST = null, AS_DOC = null, AS_LIST = null;
 function asApplyOps(raw, di, ops, st) {
   var doc = edClone(raw), d = doc.diagrams[di], errors = [], touched = [];
   AS_ST = st || null;
   AS_DOC = doc;
+  AS_LIST = Array.isArray(ops) ? ops : (ops && Array.isArray(ops.ops) ? ops.ops : null);
   if (!d) return { raw: raw, errors: [asl('eNoTab', di)], touched: [] };
   if (edTypeOf(d) !== 'graph') { AS_ST = null; return { raw: raw, errors: [asl('eNotGraph', str(d.title) || str(d.id) || di + 1)], touched: [] }; }
   if (ops && !Array.isArray(ops) && Array.isArray(ops.ops)) ops = ops.ops;
@@ -627,6 +628,7 @@ function asApplyOps(raw, di, ops, st) {
   });
   AS_ST = null;
   AS_DOC = null;
+  AS_LIST = null;
   return { raw: errors.length ? raw : doc, errors: errors, touched: touched };
 }
 /* Hand-placed positions from the automatic layout, as the editor does before a drag (edFreeze). */
