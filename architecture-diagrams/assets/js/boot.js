@@ -128,7 +128,7 @@ function prepareSpec(raw) {
       return spec;
     });
   }
-  return specUsesStencils(raw) ? loadStencilPack().then(function () { return raw; }) : Promise.resolve(raw);
+  return specUsesStencils(raw) ? loadStencilsFor(raw).then(function () { return raw; }) : Promise.resolve(raw);
 }
 function drawioNotice(spec) {
   if (spec && spec.drawioSkipped) showNotice((lang === 'vi' ? spec.drawioSkipped + ' trang nén trong file chưa mở được. ' : spec.drawioSkipped + ' compressed page(s) of this file could not be opened. ') + t('oldBrowser'));

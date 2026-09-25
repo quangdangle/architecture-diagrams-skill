@@ -144,6 +144,7 @@ function dioVertexModel(sty, w, h, label) {
   var name = dioShapeName(sty), shape = DIO_SHAPES[name], unsupported = false;
   if (sty.adShape && SYMBOLS[sty.adShape] && !SYMBOLS[sty.adShape].native) shape = sty.adShape;
   if (!shape && /^mxgraph\./.test(name) && stencilKnown(name)) shape = name;
+  if (!shape && /^stencil\(/.test(name) && typeof stencilInlineKey === 'function' && stencilKnown(stencilInlineKey(name.slice(8, -1)))) shape = stencilInlineKey(name.slice(8, -1));
   if (!shape) { shape = 'box'; unsupported = true; }
   /* a label that is only a picture (<img> in an HTML label) is drawn as an image */
   var labelImage = label && label.image && !label.text && safeImageSrc(label.image.src) ? label.image : null;
@@ -310,6 +311,11 @@ function parseDrawio(text, fileName) {
       return null;
     });
   })).then(function (models) {
+    /* the shapes the file draws itself are unpacked before its pages are read */
+    var styles = [];
+    models.forEach(function (m) { if (m) Array.prototype.forEach.call(m.getElementsByTagName('mxCell'), function (c) { var s0 = c.getAttribute('style'); if (s0 && s0.indexOf('stencil(') >= 0) styles.push(s0); }); });
+    return loadInlineStencils(styles.join('\n')).then(function () { return models; });
+  }).then(function (models) {
     if (!models.some(Boolean) && skipped) throw new Error(t('oldBrowser'));
     var base = str(fileName).replace(/\.(drawio|xml|svg|dio)$/i, '').replace(/\.drawio$/i, '');
     var diagrams = [], unsupported = 0;
@@ -345,7 +351,10 @@ function dioConvertPage(model, name, index, pageEl) {
     var geo = null;
     if (geoEl) {
       geo = { x: dioNum(geoEl.getAttribute('x'), 0), y: dioNum(geoEl.getAttribute('y'), 0), w: dioNum(geoEl.getAttribute('width'), 0), h: dioNum(geoEl.getAttribute('height'), 0),
-              relative: geoEl.getAttribute('relative') === '1', points: [], sourcePoint: null, targetPoint: null, offset: null };
+              relative: geoEl.getAttribute('relative') === '1', points: [], sourcePoint: null, targetPoint: null, offset: null,
+              /* the attributes as written, and any inner parts (alternate bounds, label offset), for writing an unmoved shape back exactly */
+              raw: [geoEl.getAttribute('x'), geoEl.getAttribute('y'), geoEl.getAttribute('width'), geoEl.getAttribute('height')],
+              inner: Array.prototype.map.call(geoEl.children, function (c) { return new XMLSerializer().serializeToString(c); }).join('') };
       Array.prototype.forEach.call(geoEl.children, function (c) {
         if (c.tagName === 'mxPoint') {
           var pt = { x: dioNum(c.getAttribute('x'), 0), y: dioNum(c.getAttribute('y'), 0) }, as = c.getAttribute('as');
@@ -362,9 +371,10 @@ function dioConvertPage(model, name, index, pageEl) {
     }
     var cell = {
       id: id, parent: cellEl.getAttribute('parent'), vertex: cellEl.getAttribute('vertex') === '1', edge: cellEl.getAttribute('edge') === '1',
-      source: cellEl.getAttribute('source'), target: cellEl.getAttribute('target'), styleRaw: cellEl.getAttribute('style') || '',
+      source: cellEl.getAttribute('source'), target: cellEl.getAttribute('target'), styleRaw: cellEl.getAttribute('style') || '', hasStyle: cellEl.hasAttribute('style'),
       value: wrapper ? (wrapper.getAttribute('label') || '') : (cellEl.getAttribute('value') || ''), visible: cellEl.getAttribute('visible') !== '0',
-      geo: geo, z: z, attrs: attrs, children: []
+      noValue: wrapper ? !wrapper.hasAttribute('label') : !cellEl.hasAttribute('value'),
+      geo: geo, z: z, attrs: attrs, children: [], el: wrapper || cellEl
     };
     cell.sty = dioParseStyle(cell.styleRaw);
     cells.push(cell);
@@ -390,8 +400,12 @@ function dioConvertPage(model, name, index, pageEl) {
     return r;
   }
   var nodes = [], groups = [], edges = [], unsupported = 0, kind = {};
+  /* cells the tool does not draw (on hidden layers, or wires with a loose end and no point for it) are written back as
+     they were, so saving the file never loses them */
+  var keepRaw = [];
   cells.forEach(function (c) {
-    if (!c.vertex || layerIds[c.id] || hiddenLayer[layerOf(c)]) return;
+    if (!c.vertex || layerIds[c.id]) return;
+    if (hiddenLayer[layerOf(c)]) { keepRaw.push(c); return; }
     if (c.parent && byId[c.parent] && byId[c.parent].edge) return;
     /* sticky notes and the page's links (written by this tool) are not blocks */
     if (c.attrs && (c.attrs.adNote || c.attrs.adPage)) return;
@@ -407,6 +421,8 @@ function dioConvertPage(model, name, index, pageEl) {
     var dio = { style: c.styleRaw, value: c.value, text: label.text, z: c.z, layer: layerOf(c) };
     if (c.attrs) dio.attrs = c.attrs;
     if (!c.visible) dio.hidden = true;
+    if (c.noValue) dio.noValue = true;
+    if (c.geo && !c.geo.relative) { dio.geoRaw = c.geo.raw; if (c.geo.inner) dio.geoInner = c.geo.inner; }
     if (kind[c.id] === 'group') {
       var hidden = c.sty._names.indexOf('group') >= 0;
       var gm = dioVertexModel(c.sty, g.w, g.h, label);
@@ -435,7 +451,8 @@ function dioConvertPage(model, name, index, pageEl) {
     nodes.push(node);
   });
   cells.forEach(function (c) {
-    if (!c.edge || hiddenLayer[layerOf(c)]) return;
+    if (!c.edge) return;
+    if (hiddenLayer[layerOf(c)]) { keepRaw.push(c); return; }
     if (c.attrs && c.attrs.adNoteLink) return;
     var g = c.geo || { points: [] }, origin = abs(byId[c.parent] && byId[c.parent].vertex ? byId[c.parent] : null);
     var shift = function (p) { return p ? { x: p.x + origin.x, y: p.y + origin.y } : null; };
@@ -447,15 +464,20 @@ function dioConvertPage(model, name, index, pageEl) {
     if (to && em.toAnchor) edge.toAnchor = em.toAnchor;
     if (!from) edge.fromPoint = shift(g.sourcePoint);
     if (!to) edge.toPoint = shift(g.targetPoint);
-    if ((!from && !edge.fromPoint) || (!to && !edge.toPoint)) return;
+    if ((!from && !edge.fromPoint) || (!to && !edge.toPoint)) { keepRaw.push(c); return; }
     var label = dioLabel(c.value, c.sty.html === '1'), texts = label.text ? [label.text] : [];
     var dio = { style: c.styleRaw, value: c.value, text: label.text, z: c.z, layer: layerOf(c) };
     if (c.attrs) dio.attrs = c.attrs;
+    if (c.noValue) dio.noValue = true;
     if (g.w || g.h) dio.geoSize = [g.w, g.h];
+    if (g.raw && (g.raw[2] !== null || g.raw[3] !== null)) dio.geoSizeRaw = [g.raw[2], g.raw[3]];
+    if (c.geo && !c.geo.relative) dio.geoAbs = true;
+    /* a wire kept inside a group or a block in draw.io stays there, with its points relative to it */
+    if (byId[c.parent] && byId[c.parent].vertex && kind[c.parent]) dio.parent = c.parent;
     /* draw.io keeps end points on connected edges although it ignores them; keep them so the file comes back as it was */
     if (from && g.sourcePoint) dio.sp = [g.sourcePoint.x, g.sourcePoint.y];
     if (to && g.targetPoint) dio.tp = [g.targetPoint.x, g.targetPoint.y];
-    if (g.relative !== false && (g.x || g.y)) { edge.labelAt = Math.max(-1, Math.min(1, g.x || 0)); edge.labelDist = g.y || 0; dio.ownLabelPos = true; }
+    if (g.relative !== false && (g.x || g.y)) { edge.labelAt = Math.max(-1, Math.min(1, g.x || 0)); edge.labelDist = g.y || 0; dio.ownLabelPos = true; if (g.raw) dio.labelRaw = [g.raw[0], g.raw[1]]; }
     if (g.offset) { edge.labelOffset = g.offset; dio.ownOffset = true; }
     var kids = c.children.filter(function (k) { return k.vertex && k.value; });
     if (kids.length) {
@@ -475,9 +497,11 @@ function dioConvertPage(model, name, index, pageEl) {
   var meta = { id: pageEl ? pageEl.getAttribute('id') : null, name: name, model: {}, layers: layers.map(function (l) {
     var o = { id: l.id, value: l.value };
     if (!l.visible) o.visible = false;
-    if (l.styleRaw) o.style = l.styleRaw;
+    if (l.styleRaw || l.hasStyle) o.style = l.styleRaw;
     return o;
   }), root: rootCell ? rootCell.id : '0' };
+  if (rootCell && rootCell.styleRaw) meta.rootStyle = rootCell.styleRaw;
+  if (keepRaw.length) meta.keep = keepRaw.map(function (c) { return { id: c.id, parent: c.parent, z: c.z, xml: new XMLSerializer().serializeToString(c.el) }; });
   Array.prototype.forEach.call(model.attributes, function (a) { meta.model[a.name] = a.value; });
   var page = {
     id: (pageEl && pageEl.getAttribute('id')) || ('page-' + (index + 1)), title: name, type: 'graph', layout: 'manual', source: 'drawio',
@@ -556,6 +580,22 @@ function prepareDrawioExport() {
 }
 function dioNumOut(v) { return String(Math.round(v * 10000) / 10000); }
 function dioGeometry(x, y, w, h) { return '<mxGeometry x="' + dioNumOut(x) + '" y="' + dioNumOut(y) + '" width="' + dioNumOut(w) + '" height="' + dioNumOut(h) + '" as="geometry"/>'; }
+/* A shape that did not move or change size is written with its geometry exactly as the file had it (no x="0" added,
+   no rounding, inner parts kept); anything else gets fresh numbers. */
+function dioGeometryKeep(x, y, w, h, dio) {
+  var raw = dio && dio.geoRaw;
+  if (raw) {
+    var same = function (v, r) { return Math.abs(v - (r === null || r === undefined || r === '' ? 0 : +r)) < 0.001; };
+    if (same(x, raw[0]) && same(y, raw[1]) && same(w, raw[2]) && same(h, raw[3])) {
+      var attrs = [['x', raw[0]], ['y', raw[1]], ['width', raw[2]], ['height', raw[3]]].filter(function (q) { return q[1] !== null && q[1] !== undefined; });
+      var head = '<mxGeometry' + attrs.map(function (q) { return ' ' + q[0] + '="' + xmlEsc(q[1]) + '"'; }).join('') + ' as="geometry"';
+      return dio.geoInner ? head + '>' + dio.geoInner + '</mxGeometry>' : head + '/>';
+    }
+  }
+  return dioGeometry(x, y, w, h);
+}
+/* A cell the file wrote without a value stays without one while its text is still empty. */
+function dioKeepValue(value, dio) { return dio && dio.noValue && (value === '' || value === null || value === undefined) ? null : value; }
 function dioValue(text) { return htmlEsc(text).replace(/\n/g, '<br>'); }
 function dioCell(attrs, inner, wrapperAttrs) {
   if (wrapperAttrs) {
@@ -623,7 +663,7 @@ var DIO_NATIVE_STYLE = {
 };
 function dioShapeStyle(n, m) {
   var def = SYMBOLS[n.shape];
-  if (!def) return /^mxgraph\./.test(n.shape) ? 'shape=' + n.shape + ';' : '';
+  if (!def) return /^mxgraph\./.test(n.shape) ? 'shape=' + n.shape + ';' : (/^stencil\./.test(n.shape) && STENCIL_INLINE[n.shape] ? 'shape=stencil(' + STENCIL_INLINE[n.shape] + ');' : '');
   if (def.native) {
     var base = DIO_NATIVE_STYLE[def.native] || '';
     if (n.shape === 'circle') base += 'aspect=fixed;';
@@ -767,8 +807,8 @@ function drawioGraphPage(st) {
         ';fontColor=' + mix(c, '#000000', 0.2) + ';fontStyle=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=2;container=1;collapsible=0;html=1;whiteSpace=wrap;';
       value = htmlEsc(chipLabel(g));
     }
-    items.push({ z: g.drawio && isFinite(g.drawio.z) ? g.drawio.z : -1e6 + i, xml: dioCell({ id: cellId['g:' + g.id], value: value, style: style, vertex: 1, connectable: g.hidden ? 0 : null, parent: par.id },
-      dioGeometry(b.x + ox - par.x, b.y + oy - par.y, b.w, b.h), dioOwnAttrs(g.drawio && g.drawio.attrs, { adSource: dioCellOf(d.boardOf, g.source, false), adDetail: g.detail, link: g.detail ? 'data:page/id,' + dioPageOf(g.detail) : null })) });
+    items.push({ z: g.drawio && isFinite(g.drawio.z) ? g.drawio.z : -1e6 + i, xml: dioCell({ id: cellId['g:' + g.id], value: dioKeepValue(value, g.drawio), style: style, vertex: 1, connectable: g.hidden ? 0 : null, parent: par.id },
+      dioGeometryKeep(b.x + ox - par.x, b.y + oy - par.y, b.w, b.h, g.drawio), dioOwnAttrs(g.drawio && g.drawio.attrs, { adSource: dioCellOf(d.boardOf, g.source, false), adDetail: g.detail, link: g.detail ? 'data:page/id,' + dioPageOf(g.detail) : null })) });
   });
   d.nodes.forEach(function (n, i) {
     var p = L.nodes[n.id], m = L.nodeM[n.id];
@@ -804,35 +844,62 @@ function drawioGraphPage(st) {
     }
     var own = { adDetail: n.detail, link: n.detail ? 'data:page/id,' + dioPageOf(n.detail) : null };
     if (n.port) { own.adPortName = n.port.name; own.adPortDir = n.port.dir; own.adPortKind = n.port.kind; own.adPortOf = n.port.of ? cellId['g:' + n.port.of] || n.port.of : null; }
-    items.push({ z: n.drawio && isFinite(n.drawio.z) ? n.drawio.z : 1e6 + i, xml: dioCell({ id: id, value: value, style: style, vertex: 1, parent: par.id },
-      dioGeometry(x - par.x, y - par.y, m.w, m.h), dioOwnAttrs(n.drawio && n.drawio.attrs, own)) + extra });
+    items.push({ z: n.drawio && isFinite(n.drawio.z) ? n.drawio.z : 1e6 + i, xml: dioCell({ id: id, value: dioKeepValue(value, n.drawio), style: style, vertex: 1, parent: par.id },
+      dioGeometryKeep(x - par.x, y - par.y, m.w, m.h, n.drawio), dioOwnAttrs(n.drawio && n.drawio.attrs, own)) + extra });
   });
+  /* top-left corner of a group or block in the file, for wires kept inside it */
+  var cornerOf = function (cid) {
+    var gid = null, nid = null;
+    d.groups.forEach(function (g) { if (cellId['g:' + g.id] === cid) gid = g.id; });
+    if (gid && groupPos[gid]) return { id: cid, x: groupPos[gid].x, y: groupPos[gid].y };
+    d.nodes.forEach(function (n) { if (cellId['n:' + n.id] === cid) nid = n.id; });
+    if (nid && L.nodes[nid]) return { id: cid, x: L.nodes[nid].x - L.nodeM[nid].w / 2 + ox, y: L.nodes[nid].y - L.nodeM[nid].h / 2 + oy };
+    return null;
+  };
   d.edges.forEach(function (e, i) {
     var geo = L.edges[i], id = e.drawio && e.id ? e.id : 'e-' + i;
     var src = endCell(e.from), tgt = endCell(e.to);
     var pts = manual ? e.points : geo.points.slice(1, -1);
-    var inner = '<mxGeometry relative="1" as="geometry">';
+    var home = e.drawio && e.drawio.parent ? cornerOf(e.drawio.parent) : null, hx = home ? home.x : 0, hy = home ? home.y : 0;
+    var inner = e.drawio && e.drawio.geoAbs ? '<mxGeometry as="geometry">' : '<mxGeometry relative="1" as="geometry">';
     var N = dioNumOut;
-    if (!src) { var sp = e.fromPoint || geo.points[0]; if (sp) inner += '<mxPoint x="' + N(sp.x + ox) + '" y="' + N(sp.y + oy) + '" as="sourcePoint"/>'; }
+    if (!src) { var sp = e.fromPoint || geo.points[0]; if (sp) inner += '<mxPoint x="' + N(sp.x + ox - hx) + '" y="' + N(sp.y + oy - hy) + '" as="sourcePoint"/>'; }
     else if (e.drawio && e.drawio.sp) inner += '<mxPoint x="' + N(e.drawio.sp[0]) + '" y="' + N(e.drawio.sp[1]) + '" as="sourcePoint"/>';
-    if (!tgt) { var tp = e.toPoint || geo.points[geo.points.length - 1]; if (tp) inner += '<mxPoint x="' + N(tp.x + ox) + '" y="' + N(tp.y + oy) + '" as="targetPoint"/>'; }
+    if (!tgt) { var tp = e.toPoint || geo.points[geo.points.length - 1]; if (tp) inner += '<mxPoint x="' + N(tp.x + ox - hx) + '" y="' + N(tp.y + oy - hy) + '" as="targetPoint"/>'; }
     else if (e.drawio && e.drawio.tp) inner += '<mxPoint x="' + N(e.drawio.tp[0]) + '" y="' + N(e.drawio.tp[1]) + '" as="targetPoint"/>';
-    if (pts.length) inner += '<Array as="points">' + pts.map(function (q) { return '<mxPoint x="' + N(q.x + ox) + '" y="' + N(q.y + oy) + '"/>'; }).join('') + '</Array>';
+    if (pts.length) inner += '<Array as="points">' + pts.map(function (q) { return '<mxPoint x="' + N(q.x + ox - hx) + '" y="' + N(q.y + oy - hy) + '"/>'; }).join('') + '</Array>';
     /* a label kept in its own child cell carries its offset there; the edge writes one only if it had one */
     var kidsKeep = e.drawio && e.drawio.labelCells && str(e.drawio.childText) === e.label;
     if (e.labelOffset && (!kidsKeep || e.drawio.ownOffset)) inner += '<mxPoint x="' + N(e.labelOffset.x) + '" y="' + N(e.labelOffset.y) + '" as="offset"/>';
     inner += '</mxGeometry>';
     var keepKidsPos = e.drawio && e.drawio.labelCells && str(e.drawio.childText) === e.label && !e.drawio.ownLabelPos;
-    if ((e.labelAt || e.labelDist) && !keepKidsPos) inner = inner.replace('<mxGeometry relative="1"', '<mxGeometry x="' + dioNumOut(e.labelAt || 0) + '" y="' + dioNumOut(e.labelDist || 0) + '" relative="1"');
-    if (e.drawio && e.drawio.geoSize) inner = inner.replace('<mxGeometry ', '<mxGeometry width="' + dioNumOut(e.drawio.geoSize[0]) + '" height="' + dioNumOut(e.drawio.geoSize[1]) + '" ');
+    if ((e.labelAt || e.labelDist) && !keepKidsPos) {
+      var lr = e.drawio && e.drawio.labelRaw, same = function (v, r) { return Math.abs((v || 0) - (r === null || r === undefined ? 0 : +r)) < 1e-6; };
+      var pos = lr && same(e.labelAt, lr[0]) && same(e.labelDist, lr[1]) ?
+        (lr[0] !== null ? 'x="' + xmlEsc(lr[0]) + '" ' : '') + (lr[1] !== null ? 'y="' + xmlEsc(lr[1]) + '" ' : '') :
+        'x="' + dioNumOut(e.labelAt || 0) + '" y="' + dioNumOut(e.labelDist || 0) + '" ';
+      inner = inner.replace('<mxGeometry relative="1"', '<mxGeometry ' + pos + 'relative="1"');
+    }
+    if (e.drawio && e.drawio.geoSizeRaw) {
+      var wh = (e.drawio.geoSizeRaw[0] !== null ? 'width="' + xmlEsc(e.drawio.geoSizeRaw[0]) + '" ' : '') + (e.drawio.geoSizeRaw[1] !== null ? 'height="' + xmlEsc(e.drawio.geoSizeRaw[1]) + '" ' : '');
+      inner = inner.replace('<mxGeometry ', '<mxGeometry ' + wh);
+    } else if (e.drawio && e.drawio.geoSize) inner = inner.replace('<mxGeometry ', '<mxGeometry width="' + dioNumOut(e.drawio.geoSize[0]) + '" height="' + dioNumOut(e.drawio.geoSize[1]) + '" ');
     var keepKids = e.drawio && e.drawio.labelCells && str(e.drawio.childText) === e.label;
     var value = keepKids ? e.drawio.value : (e.drawio && str(e.drawio.text) === e.label ? e.drawio.value : dioValue(e.label));
-    var layer = e.drawio && e.drawio.layer && layerSet[e.drawio.layer] ? e.drawio.layer : defaultLayer;
-    var xml = dioCell({ id: id, value: value, style: dioEdgeStyle(e, d), edge: 1, parent: layer, source: src, target: tgt }, inner, e.drawio && e.drawio.attrs);
+    var layer = home ? home.id : e.drawio && e.drawio.layer && layerSet[e.drawio.layer] ? e.drawio.layer : defaultLayer;
+    var xml = dioCell({ id: id, value: dioKeepValue(value, e.drawio), style: dioEdgeStyle(e, d), edge: 1, parent: layer, source: src, target: tgt }, inner, e.drawio && e.drawio.attrs);
     if (keepKids) xml += e.drawio.labelCells.join('');
     items.push({ z: e.drawio && isFinite(e.drawio.z) ? e.drawio.z : 2e6 + i, xml: xml });
   });
   dioNoteItems(d, L, ox, oy, endCell, defaultLayer, items);
+  if (meta && Array.isArray(meta.keep) && meta.keep.length) {
+    var present = {};
+    present[rootId] = true;
+    layers.forEach(function (l) { present[l.id] = true; });
+    Object.keys(cellId).forEach(function (k) { present[cellId[k]] = true; });
+    meta.keep.forEach(function (k) { present[k.id] = true; });
+    meta.keep.forEach(function (k) { if (k && typeof k.xml === 'string' && present[k.parent]) items.push({ z: isFinite(k.z) ? k.z : 3e6, xml: k.xml }); });
+  }
   if (d.boardOf || d.detailOf) {
     items.push({ z: -2e6, xml: dioCell({ id: 'ad-page', value: '', style: 'text;html=1;', vertex: 1, parent: defaultLayer, visible: 0 }, dioGeometry(0, 0, 10, 10),
       { tag: 'UserObject', adPage: '1', adBoardOf: d.boardOf || null, adDetailTab: d.detailOf ? d.detailOf.tab : null,
@@ -844,8 +911,8 @@ function drawioGraphPage(st) {
     pageWidth: Math.ceil(outW(L)), pageHeight: Math.ceil(outH(L)), math: 0, shadow: 0 };
   Object.keys(model).forEach(function (k) { modelAttrs[k] = model[k]; });
   var head = '<mxGraphModel' + Object.keys(modelAttrs).map(function (k) { return ' ' + k + '="' + xmlEsc(modelAttrs[k]) + '"'; }).join('') + '><root>';
-  var layerXml = '<mxCell id="' + xmlEsc(rootId) + '"/>' + layers.map(function (l) {
-    return dioCell({ id: l.id, value: l.value || null, style: l.style || null, visible: l.visible === false ? 0 : null, parent: rootId });
+  var layerXml = '<mxCell id="' + xmlEsc(rootId) + '"' + (meta && meta.rootStyle ? ' style="' + xmlEsc(meta.rootStyle) + '"' : '') + '/>' + layers.map(function (l) {
+    return dioCell({ id: l.id, value: l.value || null, style: typeof l.style === 'string' ? l.style : null, visible: l.visible === false ? 0 : null, parent: rootId });
   }).join('');
   var pageId = meta && meta.id ? meta.id : d.id;
   return '<diagram id="' + xmlEsc(pageId) + '" name="' + xmlEsc(d.title || (meta && meta.name) || d.id) + '">' + head + layerXml + items.map(function (it) { return it.xml; }).join('') + '</root></mxGraphModel></diagram>';

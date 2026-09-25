@@ -403,7 +403,7 @@ function edLoad(raw, fileName) {
     if (fileName && ED.status) ED.status.textContent = et('opened').replace('{f}', fileName);
     if (raw && raw.drawioNote) drawioNotice(raw);
   };
-  if (specUsesStencils(ED.raw)) loadStencilPack().then(go); else go();
+  if (specUsesStencils(ED.raw)) loadStencilsFor(ED.raw).then(go); else go();
 }
 
 /* ---------- panel skeleton ---------- */

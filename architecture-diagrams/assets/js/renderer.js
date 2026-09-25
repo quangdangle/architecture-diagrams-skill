@@ -478,7 +478,9 @@ function normalizeDiagram(d, index) {
     legend: { colors: legend.colors && typeof legend.colors === 'object' ? legend.colors : {}, edges: legend.edges && typeof legend.edges === 'object' ? legend.edges : {} },
     notes: normNotes(d.notes, nodeById, groupById, edges),
     boardOf: str(d.boardOf) || null,
-    detailOf: d.detailOf && typeof d.detailOf === 'object' && str(d.detailOf.tab) ? { tab: str(d.detailOf.tab), block: str(d.detailOf.block) } : null
+    detailOf: d.detailOf && typeof d.detailOf === 'object' && str(d.detailOf.tab) ? { tab: str(d.detailOf.tab), block: str(d.detailOf.block) } : null,
+    /* the draw.io page this tab came from (its layers, root cell and page settings), written back on export */
+    drawio: d.drawio && typeof d.drawio === 'object' ? d.drawio : null
   };
 }
 
@@ -1307,7 +1309,10 @@ function routeEdge(d, L, e, lm) {
   var p0 = src ? (e.fromAnchor ? anchorPt(src, e.fromAnchor) : null) : (e.fromPoint ? { x: e.fromPoint.x, y: e.fromPoint.y } : null);
   var pe = tgt ? (e.toAnchor ? anchorPt(tgt, e.toAnchor) : null) : (e.toPoint ? { x: e.toPoint.x, y: e.toPoint.y } : null);
   var mid;
-  if (e.from && e.from === e.to && !hints.length && src) mid = selfLoop(src);
+  /* a wire from a block to itself is a loop, unless its two ends sit on different points of the block (draw.io files
+     draw a border line that way, from one corner of a box to another) */
+  var twoPoints = e.fromAnchor && e.toAnchor && (e.fromAnchor.x !== e.toAnchor.x || e.fromAnchor.y !== e.toAnchor.y);
+  if (e.from && e.from === e.to && !hints.length && src && !twoPoints) mid = selfLoop(src);
   else if (route === 'elbow') mid = elbowRoute(src, tgt, p0, pe, hints, e.elbow);
   else if (route === 'segment' || (route === 'orthogonal' && hints.length)) mid = segmentRoute(src, tgt, p0, pe, hints);
   else if (route === 'orthogonal') mid = orthRoute(src, tgt, p0, pe);

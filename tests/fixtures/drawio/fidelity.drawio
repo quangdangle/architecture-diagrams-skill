@@ -1,0 +1,47 @@
+<mxfile host="Electron" version="22.0.0">
+  <diagram id="fid-page" name="Fidelity">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="p1-0" style=";html=1;" />
+        <mxCell id="p1-1" value="Main" style="" parent="p1-0" />
+        <mxCell id="p1-2" value="Review notes" parent="p1-0" visible="0" />
+        <mxCell id="a" style="rounded=0;whiteSpace=wrap;html=1;" parent="p1-1" vertex="1">
+          <mxGeometry width="84.70588235294117" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="b" value="Stage B" style="rounded=0;whiteSpace=wrap;html=1;" parent="p1-1" vertex="1">
+          <mxGeometry x="240" y="200.5" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="stage" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;" parent="p1-1" vertex="1">
+          <mxGeometry x="420" y="40" width="200" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="border" style="endArrow=none;html=1;rounded=0;exitX=0;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=1;entryDx=0;entryDy=0;dashed=1;" parent="p1-1" source="stage" target="stage" edge="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"><mxPoint x="420" y="40" as="sourcePoint" /><mxPoint x="420" y="340" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="grp" value="" style="group" parent="p1-1" vertex="1" connectable="0">
+          <mxGeometry x="40" y="400" width="300" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="d" value="D" style="rounded=0;whiteSpace=wrap;html=1;" parent="grp" vertex="1">
+          <mxGeometry width="80" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e" value="E" style="rounded=0;whiteSpace=wrap;html=1;" parent="grp" vertex="1">
+          <mxGeometry x="220" y="60" width="80" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="de" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="grp" source="d" target="e" edge="1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="150" y="20" /><mxPoint x="150" y="80" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="mux" value="" style="shape=stencil(jZJbEsIgDEVXw6/Tgo4L8LEPrNFmpKED1MfuTScdpXXUfsG93BwIoMwm1rYFpQuyDSizVVo33V3zwN5NDF2IrEUuB2ljC1US72oD2oMDWYkp+Avc8JiGEqQaAqZ+1eyU2VSeiGvRU3wZXGSROFPcpWjY5jGohRHdMqmBBGGUeh8fSaz9fPJ6Lrn8Ry4n5NU8su9STubJxw0dbHU5B9/RUXRr+8vtZ42/wtfecqxDyoKTZDk/an5Ex8nl+Cmcj5A3+e6BxbTBkw8w0uicfKwcMU2xJT/a7J4=);whiteSpace=wrap;html=1;" parent="p1-1" vertex="1">
+          <mxGeometry x="700" y="100" width="20" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="ab" value="data" style="endArrow=classic;html=1;rounded=0;" parent="p1-1" source="a" target="b" edge="1">
+          <mxGeometry x="-0.2" relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="loose" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.25;exitY=1;" parent="p1-1" edge="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint y="160" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="hidden-note" value="only on the review layer" style="text;html=1;" parent="p1-2" vertex="1">
+          <mxGeometry x="700" y="300" width="160" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

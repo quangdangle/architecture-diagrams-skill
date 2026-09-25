@@ -21,7 +21,37 @@ function loadStencilPack() {
   return stencilPackPromise;
 }
 function specUsesStencils(raw) {
-  try { return /mxgraph\./.test(JSON.stringify(raw)); } catch (e) { return false; }
+  try { return /mxgraph\.|shape=stencil\(/.test(JSON.stringify(raw)); } catch (e) { return false; }
+}
+/* Shapes a draw.io file draws itself (style "shape=stencil(...)", made with Edit Shape in draw.io): unpacked once and
+   kept under a short key, "stencil.<hash>", so they draw like the library shapes. The packed text stays in the style. */
+var STENCIL_INLINE = {};
+function stencilInlineKey(b64) {
+  var h = 0x811c9dc5;
+  for (var i = 0; i < b64.length; i++) { h ^= b64.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return 'stencil.' + ('0000000' + h.toString(16)).slice(-8);
+}
+function loadInlineStencils(text) {
+  var found = {}, re = /shape=stencil\(([A-Za-z0-9+\/=]+)\)/g, m;
+  while ((m = re.exec(String(text || '')))) if (!STENCIL_XML[stencilInlineKey(m[1])]) found[m[1]] = true;
+  var list = Object.keys(found);
+  if (!list.length || typeof DecompressionStream === 'undefined') return Promise.resolve();
+  return Promise.all(list.map(function (b64) {
+    return inflateRawB64(b64).then(function (xml) {
+      xml = String(xml).trim();
+      if (!/^<shape[\s>]/.test(xml)) return;
+      var key = stencilInlineKey(b64);
+      STENCIL_XML[key] = xml;
+      STENCIL_INLINE[key] = b64;
+      delete STENCIL_DEFS[key];
+    }).catch(function () { /* a damaged shape is drawn as a box */ });
+  }));
+}
+/* The library shapes and the file's own shapes a spec needs. */
+function loadStencilsFor(raw) {
+  var text = '';
+  try { text = typeof raw === 'string' ? raw : JSON.stringify(raw); } catch (e) { text = ''; }
+  return loadStencilPack().then(function () { return loadInlineStencils(text); });
 }
 function stencilKnown(name) { return !!STENCIL_XML[String(name).toLowerCase()]; }
 function stencilNames() { return Object.keys(STENCIL_XML).sort(); }

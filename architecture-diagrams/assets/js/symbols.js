@@ -563,7 +563,7 @@ var SYMBOL_CAT_NAMES = {
 function symbolName(v) {
   var s = String(v === undefined || v === null ? '' : v).trim().toLowerCase();
   if (SYMBOLS[s]) return s;
-  if (/^mxgraph\./.test(s) && typeof stencilKnown === 'function' && stencilKnown(s)) return s;
+  if (/^(mxgraph|stencil)\./.test(s) && typeof stencilKnown === 'function' && stencilKnown(s)) return s;
   return SYMBOL_ALIAS[s] || null;
 }
 
