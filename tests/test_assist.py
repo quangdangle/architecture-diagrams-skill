@@ -471,3 +471,63 @@ class RedrawFindings(unittest.TestCase):
         steps = assist.suggest(spec)["nextSteps"]
         self.assertTrue(len(steps) >= 5 and all(s.get("pattern") for s in steps), steps)
 
+
+class ArrangeChip(unittest.TestCase):
+    """The arrange operation: a chip overview laid out around its buses (found when a newcomer asked the page's AI to draw
+    OpenTitan Earl Grey and then to make it readable, 25/09/2026)."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not find_browser():
+            raise unittest.SkipTest("needs Chrome, Chromium, Edge or Brave")
+
+    @staticmethod
+    def chip():
+        nodes = [{"id": "cpu", "title": "Ibex core", "group": "core"}, {"id": "dm", "title": "Debug module", "group": "core"},
+                 {"id": "xm", "title": "TL-UL crossbar main"}, {"id": "xp", "title": "TL-UL crossbar peripheral"},
+                 {"id": "rom", "title": "ROM", "group": "mem"}, {"id": "sram", "title": "SRAM", "group": "mem"},
+                 {"id": "fctl", "title": "Flash controller", "group": "mem"}, {"id": "flash", "title": "Embedded flash", "group": "mem"},
+                 {"id": "aes", "title": "AES", "group": "crypto"}, {"id": "hmac", "title": "HMAC", "group": "crypto"}]
+        nodes += [{"id": p, "title": p.upper(), "group": "io"} for p in ("uart", "gpio", "spi", "i2c", "usb")]
+        edges = [{"from": "cpu", "to": "xm", "kind": "bus"}, {"from": "dm", "to": "xm", "kind": "bus"}, {"from": "xm", "to": "xp", "kind": "bus"}]
+        edges += [{"from": "xm", "to": d, "kind": "bus"} for d in ("rom", "sram", "fctl", "aes", "hmac")]
+        edges += [{"from": "xp", "to": d, "kind": "bus"} for d in ("uart", "gpio", "spi", "i2c", "usb")]
+        edges += [{"from": "fctl", "to": "flash"}, {"from": "uart", "to": "cpu", "kind": "async", "label": "irq"}]
+        return {"title": "t", "diagrams": [{"id": "top", "title": "Chip", "nodes": nodes, "edges": edges,
+                "groups": [{"id": g} for g in ("core", "mem", "crypto", "io")]}]}
+
+    def test_buses_become_bars_with_their_blocks_around_them(self):
+        steps = assist.suggest(self.chip())["nextSteps"]
+        arrange = [s for s in steps if (s.get("ops") or [{}])[0].get("op") == "arrange"]
+        self.assertTrue(arrange, steps)
+        out = assist.apply_ops(self.chip(), arrange[0]["ops"], diagram="top")
+        d = out["spec"]["diagrams"][0]
+        n = {x["id"]: x for x in d["nodes"]}
+        self.assertEqual((d["layout"], d["route"]), ("manual", "orthogonal"))
+        self.assertTrue(n["xm"]["w"] >= 640 and n["xp"]["w"] >= 640)
+        self.assertLess(n["cpu"]["y"], n["xm"]["y"])
+        self.assertLess(n["xm"]["y"], n["rom"]["y"])
+        self.assertLess(n["xm"]["y"], n["xp"]["y"])
+        self.assertEqual(n["flash"]["y"], n["fctl"]["y"])
+        self.assertGreater(n["flash"]["x"], n["fctl"]["x"])
+        rows = {}
+        for x in d["nodes"]:
+            if x["id"] not in ("xm", "xp"):
+                rows.setdefault(x["y"], []).append((x["x"], x["x"] + 216, x["id"]))
+        for row in rows.values():
+            row.sort()
+            for a, b in zip(row, row[1:]):
+                self.assertLessEqual(a[1], b[0], (a, b))
+        for e in d["edges"]:
+            if e.get("kind") == "bus" and {e["from"], e["to"]} & {"xm", "xp"} and not {e["from"], e["to"]} <= {"xm", "xp"}:
+                self.assertIn(e["fromAnchor"][1], (0, 1), e)
+                self.assertIn(e["toAnchor"][1], (0, 1), e)
+        again = assist.apply_ops(out["spec"], [{"op": "arrange", "style": "bus"}], diagram="top")
+        self.assertEqual([(x["x"], x["y"]) for x in again["spec"]["diagrams"][0]["nodes"]], [(x["x"], x["y"]) for x in d["nodes"]])
+
+    def test_a_tab_without_a_bus_says_why(self):
+        spec = {"title": "t", "diagrams": [{"id": "f", "title": "Flow", "nodes": [{"id": "a"}, {"id": "b"}], "edges": [{"from": "a", "to": "b"}]}]}
+        with self.assertRaises(assist.AssistError) as caught:
+            assist.apply_ops(spec, [{"op": "arrange", "style": "bus"}], diagram="f")
+        self.assertIn("bus", str(caught.exception))
+

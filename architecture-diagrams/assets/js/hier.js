@@ -18,7 +18,10 @@ var HT = {
     noteAdd: 'Note', noteAddTitle: 'Add a sticky note to what is selected (key N)', noteNew: 'New note',
     notes: 'Notes', noteText: 'Text', noteKind: 'Kind', noteAttach: 'About', noteDate: 'Date', noteBy: 'By', noteWhen: 'Date and author',
     tidy: 'Tidy inside', tidyTitle: 'Lay out the blocks inside this frame, signals left to right, and fit the frame to them', lTidy: 'Tidy inside {x}',
-    eTidyNone: 'no frame {x}', eTidyBox: 'frame {x} has no fixed place and size (x, y, w, h) to lay out in', noteFree: '(free on the drawing)',
+    eTidyNone: 'no frame {x}', eTidyBox: 'frame {x} has no fixed place and size (x, y, w, h) to lay out in',
+    eArrangeNoBus: 'there is no bus or crossbar to arrange around (a block wired to several others with bus wires, or named bus, crossbar, interconnect)',
+    eArrangeBoard: 'arrange works on an overview; a detail board keeps the overview\'s arrangement', eArrangeStyle: 'unknown arrangement {x} (known: bus)',
+    nsArrange: 'Arrange it as a chip: buses as bars, groups in rows', noteFree: '(free on the drawing)',
     noteDel: 'Delete this note', noteIdeas: 'Notes to add', noteIdeasTitle: 'Notes written from this diagram: click one to add it, then edit the text',
     lNoteAdd: 'Note added', lNoteEdit: 'Note edited', lNoteDel: 'Note deleted', lNoteMove: 'Note moved',
     ideaCdc: 'Signal {x} crosses from the {y} clock domain into {z}: it needs a synchronizer (2 flip-flops for one bit, an asynchronous FIFO for data).',
@@ -50,7 +53,10 @@ var HT = {
     noteAdd: 'Ghi chú', noteAddTitle: 'Thêm ghi chú dán cho phần đang chọn (phím N)', noteNew: 'Ghi chú mới',
     notes: 'Ghi chú', noteText: 'Nội dung', noteKind: 'Loại', noteAttach: 'Gắn với', noteDate: 'Ngày', noteBy: 'Người ghi', noteWhen: 'Ngày và người ghi',
     tidy: 'Sắp lại bên trong', tidyTitle: 'Xếp lại các khối trong khung, tín hiệu đi từ trái sang phải, và nới khung cho vừa', lTidy: 'Sắp lại bên trong {x}',
-    eTidyNone: 'không có khung {x}', eTidyBox: 'khung {x} chưa có vị trí và kích thước cố định (x, y, w, h) để xếp', noteFree: '(đặt tự do trên hình)',
+    eTidyNone: 'không có khung {x}', eTidyBox: 'khung {x} chưa có vị trí và kích thước cố định (x, y, w, h) để xếp',
+    eArrangeNoBus: 'không có bus hay crossbar nào làm trục để xếp (khối nối bus tới nhiều khối khác, hoặc tên có bus, crossbar, interconnect)',
+    eArrangeBoard: 'thao tác xếp dùng cho sơ đồ tổng quan; bảng chi tiết giữ bố cục của tổng quan', eArrangeStyle: 'không có kiểu xếp {x} (có: bus)',
+    nsArrange: 'Xếp kiểu sơ đồ chip: bus thành thanh ngang, khối theo nhóm thành hàng', noteFree: '(đặt tự do trên hình)',
     noteDel: 'Xoá ghi chú này', noteIdeas: 'Ghi chú nên thêm', noteIdeasTitle: 'Ghi chú soạn sẵn từ chính sơ đồ: bấm để thêm, rồi sửa lại chữ',
     lNoteAdd: 'Thêm ghi chú', lNoteEdit: 'Sửa ghi chú', lNoteDel: 'Xoá ghi chú', lNoteMove: 'Dời ghi chú',
     ideaCdc: 'Tín hiệu {x} đi từ miền clock {y} sang miền {z}: cần mạch đồng bộ (2 flip-flop cho tín hiệu 1 bit, FIFO bất đồng bộ cho dữ liệu nhiều bit).',
@@ -965,6 +971,11 @@ function hierAttachOk(d, att) {
   return !!(asNodes(d)[str(att)] || asGroupIds(d)[str(att)]);
 }
 AS_OPS.tidyFrame = function (d, op) { return hierTidyFrame(d, str(op.id)); };
+AS_OPS.arrange = function (d, op) {
+  var style = str(op.style) || 'bus';
+  if (style !== 'bus') return hl('eArrangeStyle', hq(style));
+  return hierArrangeBus(d);
+};
 AS_OPS.addNote = function (d, op, touched) {
   var q = op.note && typeof op.note === 'object' ? op.note : null;
   if (!q || !str(asText(q.text))) return lang === 'vi' ? 'ghi chú cần có nội dung (text)' : 'a note needs text';
@@ -1698,6 +1709,243 @@ function hierLayers(inside, ports, wires, size) {
   });
   return pos;
 }
+/* ---------- arranging a chip diagram around its buses: every bus or crossbar a long bar, each group of blocks kept
+   together in a row above or below the bar most of its blocks hang on, hosts (CPU, DMA, debug) above, and the wires to
+   the bar straight up or down. The way chip block diagrams are drawn by hand (OpenTitan, datasheets). ---------- */
+var HA = { gapX: 50, gapCluster: 110, gapBar: 90, tierGap: 160, left: 80, top: 80, minBar: 640 };
+var HIER_HOSTS = { cpu: true, dma: true, acc: true, debug: true };
+function hierArrangeBus(d) {
+  if (str(d.boardOf) || d.detailOf) return ht('eArrangeBoard');
+  var nodes = (d.nodes || []).filter(function (n) { return n && str(n.id) && !n.port; });
+  var byId = {};
+  nodes.forEach(function (n) { byId[str(n.id)] = n; });
+  var edges = (d.edges || []).filter(function (e) { return e && byId[str(e.from)] && byId[str(e.to)] && str(e.from) !== str(e.to); });
+  var ctx = asContext(d), kind = {}, deg = {}, busDeg = {};
+  nodes.forEach(function (n) { kind[str(n.id)] = asHwKind(n, ctx); });
+  edges.forEach(function (e) {
+    [str(e.from), str(e.to)].forEach(function (k) { deg[k] = (deg[k] || 0) + 1; if (e.kind === 'bus') busDeg[k] = (busDeg[k] || 0) + 1; });
+  });
+  var hubs = nodes.map(function (n) { return str(n.id); }).filter(function (k) { return (kind[k] === 'bus' && (deg[k] || 0) >= 2) || (busDeg[k] || 0) >= 5; });
+  if (!hubs.length) return ht('eArrangeNoBus');
+  var isHub = {};
+  hubs.forEach(function (h) { isHub[h] = true; });
+  var hubsOf = {};
+  edges.forEach(function (e) {
+    var a = str(e.from), b = str(e.to);
+    if (isHub[a] && !isHub[b]) (hubsOf[b] = hubsOf[b] || []).push(a);
+    if (isHub[b] && !isHub[a]) (hubsOf[a] = hubsOf[a] || []).push(b);
+  });
+  /* the bar with the most hosts first, then the bars wired to it, and so on */
+  var hostCount = {};
+  hubs.forEach(function (h) { hostCount[h] = 0; });
+  Object.keys(hubsOf).forEach(function (k) { if (HIER_HOSTS[kind[k]]) hubsOf[k].forEach(function (h) { hostCount[h]++; }); });
+  var order = [], seen = {};
+  hubs.slice().sort(function (a, b) { return hostCount[b] - hostCount[a] || (deg[b] || 0) - (deg[a] || 0); }).forEach(function (h0) {
+    if (seen[h0]) return;
+    var queue = [h0];
+    seen[h0] = true;
+    while (queue.length) {
+      var h = queue.shift();
+      order.push(h);
+      edges.forEach(function (e) { var a = str(e.from), b = str(e.to), o = a === h ? b : b === h ? a : null; if (o && isHub[o] && !seen[o]) { seen[o] = true; queue.push(o); } });
+    }
+  });
+  var tierOf = {};
+  order.forEach(function (h, i) { tierOf[h] = i; });
+  /* clusters: the tab's groups, members kept together; a block in no group is a cluster of its own */
+  var clusters = [], clusterOf = {};
+  var keyOf = function (id) { var n = byId[id]; return str(n.group) || ('solo:' + id); };
+  nodes.forEach(function (n) {
+    var id = str(n.id);
+    if (isHub[id]) return;
+    var c = clusterOf[keyOf(id)];
+    if (!c) { c = clusterOf[keyOf(id)] = { members: [], hub: null, host: false, after: null }; clusters.push(c); }
+    c.members.push(id);
+  });
+  clusters.forEach(function (c) {
+    var votes = {};
+    c.members.forEach(function (m) { (hubsOf[m] || []).forEach(function (h) { votes[h] = (votes[h] || 0) + 1; }); if (HIER_HOSTS[kind[m]]) c.host = true; });
+    Object.keys(votes).forEach(function (h) { if (!c.hub || votes[h] > votes[c.hub] || (votes[h] === votes[c.hub] && tierOf[h] < tierOf[c.hub])) c.hub = h; });
+  });
+  /* a cluster on no bus (an embedded flash behind its controller) sits right after the cluster it is wired to */
+  for (var pass = 0; pass < 4; pass++) {
+    clusters.forEach(function (c) {
+      if (c.hub || c.after) return;
+      edges.forEach(function (e) {
+        if (c.hub || c.after) return;
+        var a = str(e.from), b = str(e.to), o = c.members.indexOf(a) >= 0 ? b : c.members.indexOf(b) >= 0 ? a : null;
+        if (!o || isHub[o]) return;
+        var oc = clusterOf[keyOf(o)];
+        if (oc && oc !== c && (oc.hub || oc.after)) c.after = oc;
+      });
+    });
+  }
+  var size = {};
+  nodes.forEach(function (n) { size[str(n.id)] = hierRealSize(n); });
+  var width = function (c) { return c.members.reduce(function (t, m) { return t + size[m].w; }, 0) + HA.gapX * (c.members.length - 1); };
+  var height = function (c) { return Math.max.apply(null, c.members.map(function (m) { return size[m].h; })); };
+  var tiers = order.map(function (h) { return { hub: h, above: [], below: [], y0: 0, y1: 0 }; }), placed = {};
+  tiers.forEach(function (t) {
+    var mine = clusters.filter(function (c) { return c.hub === t.hub; });
+    var wa = 0, wb = 0;
+    mine.filter(function (c) { return c.host; }).forEach(function (c) { t.above.push(c); wa += width(c) + HA.gapCluster; });
+    mine.filter(function (c) { return !c.host; }).forEach(function (c) { var w = width(c) + HA.gapCluster; if (wb <= wa) { t.below.push(c); wb += w; } else { t.above.push(c); wa += w; } });
+    [t.above, t.below].forEach(function (row) {
+      for (var i = 0; i < row.length; i++) {
+        placed[clusters.indexOf(row[i])] = true;
+        var sats = clusters.filter(function (c) { return c.after === row[i]; });
+        Array.prototype.splice.apply(row, [i + 1, 0].concat(sats));
+      }
+    });
+  });
+  var loose = clusters.filter(function (c, i) { return !placed[i]; });
+  var rowW = function (row) { return row.reduce(function (t, c) { return t + width(c); }, 0) + HA.gapCluster * Math.max(0, row.length - 1); };
+  var rowH = function (row) { return row.length ? Math.max.apply(null, row.map(height)) : 0; };
+  var putRow = function (row, x0, top, alignBottom) {
+    var x = x0, h = rowH(row);
+    row.forEach(function (c) {
+      c.members.forEach(function (m) {
+        var n = byId[m];
+        n.x = Math.round(x / 10) * 10;
+        n.y = Math.round((alignBottom ? top + h - size[m].h : top) / 10) * 10;
+        x += size[m].w + HA.gapX;
+      });
+      x += HA.gapCluster - HA.gapX;
+    });
+  };
+  var widest = Math.max.apply(null, tiers.map(function (t) { return Math.max(rowW(t.above), rowW(t.below)); }).concat([HA.minBar]));
+  var y = HA.top;
+  tiers.forEach(function (t) {
+    t.y0 = y;
+    var hub = byId[t.hub], wA = rowW(t.above), wB = rowW(t.below), barW = Math.max(HA.minBar, wA, wB) + 80, hA = rowH(t.above), hB = rowH(t.below);
+    var x0 = HA.left + (widest + 80 - barW) / 2;
+    putRow(t.above, x0 + (barW - wA) / 2, y, true);
+    var barY = y + (hA ? hA + HA.gapBar : 0);
+    hub.x = Math.round(x0 / 10) * 10;
+    hub.y = Math.round(barY / 10) * 10;
+    hub.w = Math.round(barW / 10) * 10;
+    delete hub.h;
+    size[t.hub] = hierRealSize(hub);
+    var yB = hub.y + size[t.hub].h + HA.gapBar;
+    putRow(t.below, x0 + (barW - wB) / 2, yB, false);
+    t.y1 = hB ? yB + hB : hub.y + size[t.hub].h;
+    y = yB + hB + HA.tierGap;
+  });
+  if (loose.length) putRow(loose, HA.left, y, false);
+  /* a group made only of bars on different tiers would draw one frame over the whole chip: the bars leave it */
+  var tierSet = {};
+  hubs.forEach(function (h) { var g = str(byId[h].group); if (g) (tierSet[g] = tierSet[g] || {})[tierOf[h]] = true; });
+  Object.keys(tierSet).forEach(function (g) {
+    var onlyBars = nodes.every(function (n) { return str(n.group) !== g || isHub[str(n.id)]; });
+    if (onlyBars && Object.keys(tierSet[g]).length > 1) hubs.forEach(function (h) { if (str(byId[h].group) === g) delete byId[h].group; });
+  });
+  /* wires to a bar go straight up or down from the middle of the block; other wires are routed afresh */
+  var pinned = function (id) { return asPinsOf(byId[id]).length > 0; };
+  var sideOf = {};
+  tiers.forEach(function (t) {
+    t.above.forEach(function (c) { c.members.forEach(function (m) { sideOf[t.hub + '|' + m] = 'above'; }); });
+    t.below.forEach(function (c) { c.members.forEach(function (m) { sideOf[t.hub + '|' + m] = 'below'; }); });
+  });
+  var r3 = function (v) { return Math.round(v * 1000) / 1000; };
+  /* bands, top to bottom: each row of blocks and each bar; the corridors between them carry the wires that are not a
+     straight drop to a bar. A wire leaves its block up or down, runs along corridors, passes a row through a gap
+     between two blocks (or a bar around its end), and comes into its target from above or below. */
+  var bands = [], bandOf = {};
+  var addBand = function (type, ids) {
+    if (!ids.length) return;
+    var b = { type: type, y0: Infinity, y1: -Infinity, spans: [] };
+    ids.forEach(function (id) {
+      var n = byId[id];
+      b.y0 = Math.min(b.y0, +n.y); b.y1 = Math.max(b.y1, +n.y + size[id].h);
+      b.spans.push([+n.x, +n.x + (type === 'bar' ? +n.w : size[id].w)]);
+      bandOf[id] = bands.length;
+    });
+    b.spans.sort(function (p, q) { return p[0] - q[0]; });
+    bands.push(b);
+  };
+  var members = function (row) { var out = []; row.forEach(function (c) { out = out.concat(c.members); }); return out; };
+  tiers.forEach(function (t) { addBand('row', members(t.above)); addBand('bar', [t.hub]); addBand('row', members(t.below)); });
+  addBand('row', members(loose));
+  /* wires sharing a corridor or a gap get lanes of their own, 9 px apart, so they do not run on top of each other */
+  var lanes = {};
+  var lane = function (key, room) {
+    var k = lanes[key] = (lanes[key] || 0) + 1, off = (k % 2 ? 1 : -1) * Math.floor(k / 2) * 9;
+    return Math.max(-room, Math.min(room, off));
+  };
+  var corridor = function (k) { /* between band k and band k + 1; -1 above the first, bands.length - 1 below the last */
+    if (k < 0) return bands[0].y0 - 50 + lane('c-1', 40);
+    if (k >= bands.length - 1) return bands[bands.length - 1].y1 + 50 + lane('c' + k, 40);
+    return Math.round((bands[k].y1 + bands[k + 1].y0) / 2) + lane('c' + k, Math.max(0, (bands[k + 1].y0 - bands[k].y1) / 2 - 12));
+  };
+  /* the free x nearest to want where a wire can cross band k: a gap between blocks, or past the ends of a bar */
+  var passAt = function (k, want) {
+    var b = bands[k], spots = [];
+    if (b.type === 'bar') { spots.push(b.spans[0][0] - 40, b.spans[0][1] + 40); }
+    else {
+      var at = -Infinity;
+      b.spans.forEach(function (sp) { if (at > -Infinity && sp[0] - at >= 36) spots.push((at + sp[0]) / 2); at = Math.max(at, sp[1]); });
+      spots.push(b.spans[0][0] - 40, at + 40);
+    }
+    var at0 = spots.reduce(function (best, x) { return best === null || Math.abs(x - want) < Math.abs(best - want) ? x : best; }, null);
+    return at0 === null ? null : at0 + lane('g' + k + ':' + Math.round(at0), 14);
+  };
+  var cx = function (id) { return +byId[id].x + (isHub[id] ? +byId[id].w : size[id].w) / 2; };
+  var route = function (e) {
+    var a = str(e.from), b = str(e.to), ka = bandOf[a], kb = bandOf[b];
+    if (ka === undefined || kb === undefined || pinned(a) || pinned(b)) return false;
+    var A = byId[a], B = byId[b], wA = isHub[a] ? +A.w : size[a].w, wB = isHub[b] ? +B.w : size[b].w;
+    var pts = [], x, fromA, toA;
+    if (ka === kb) {
+      /* same row: neighbours join straight; others go round through the corridor on the side away from the bar */
+      var lo = Math.min(cx(a), cx(b)), hi = Math.max(cx(a), cx(b)), between = bands[ka].spans.some(function (sp) { return sp[0] > lo + 1 && sp[1] < hi - 1 && sp[0] > Math.min(+A.x + wA, +B.x + wB) - 1; });
+      if (!between || bands[ka].type === 'bar') return false;
+      var up = ka === 0 || bands[ka - 1].type !== 'bar';
+      var yc = corridor(up ? ka - 1 : ka);
+      pts = [[cx(a), yc], [cx(b), yc]];
+      fromA = [0.5, up ? 0 : 1]; toA = [0.5, up ? 0 : 1];
+    } else {
+      var down = kb > ka, step = down ? 1 : -1;
+      x = isHub[a] ? passAt(ka + step, cx(b)) : cx(a);
+      if (isHub[a]) x = Math.max(+A.x + 10, Math.min(+A.x + wA - 10, x));
+      fromA = [(x - +A.x) / wA, down ? 1 : 0];
+      for (var k = ka; k !== kb; k += step) {
+        var yc2 = corridor(down ? k : k - 1), next = k + step;
+        if (next === kb) {
+          var xe = isHub[b] ? Math.max(+B.x + 10, Math.min(+B.x + wB - 10, x)) : cx(b);
+          pts.push([x, yc2], [xe, yc2]);
+          toA = [(xe - +B.x) / wB, down ? 0 : 1];
+        } else {
+          var xp = passAt(next, isHub[b] ? x : cx(b));
+          pts.push([x, yc2], [xp, yc2]);
+          x = xp;
+        }
+      }
+    }
+    var clean = [];
+    pts.forEach(function (q) { q = [Math.round(q[0]), Math.round(q[1])]; var l = clean[clean.length - 1]; if (!l || l[0] !== q[0] || l[1] !== q[1]) clean.push(q); });
+    e.fromAnchor = [r3(fromA[0]), fromA[1]];
+    e.toAnchor = [r3(toA[0]), toA[1]];
+    if (clean.length) e.points = clean; else delete e.points;
+    return true;
+  };
+  edges.forEach(function (e) {
+    var a = str(e.from), b = str(e.to), h = isHub[a] ? a : isHub[b] ? b : null, m = h === a ? b : a;
+    delete e.points;
+    /* a block on a row next to its own bar: straight up or down to the bar */
+    if (h && !isHub[m] && sideOf[h + '|' + m]) {
+      var hub = byId[h], n = byId[m], above = sideOf[h + '|' + m] === 'above';
+      var hubA = [r3(Math.max(0.01, Math.min(0.99, (+n.x + size[m].w / 2 - hub.x) / hub.w))), above ? 0 : 1], memA = [0.5, above ? 1 : 0];
+      if (h === a) { e.fromAnchor = hubA; if (!pinned(m)) e.toAnchor = memA; }
+      else { e.toAnchor = hubA; if (!pinned(m)) e.fromAnchor = memA; }
+      return;
+    }
+    if (!route(e) && !pinned(a) && !pinned(b)) { delete e.fromAnchor; delete e.toAnchor; }
+  });
+  d.layout = 'manual';
+  d.route = 'orthogonal';
+  return null;
+}
+
 /* Each port slides along its side to face the block it leads to, keeping clear of the other ports on that side. */
 function hierAlignPorts(d, g, ports, wires, ids, size) {
   var nodes = asNodes(d), bySide = { left: [], right: [], top: [], bottom: [] };

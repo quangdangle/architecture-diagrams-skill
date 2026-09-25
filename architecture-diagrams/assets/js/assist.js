@@ -1182,9 +1182,14 @@ var AS_HW = [
   ['dma', 'dma', ''],
   ['bridge', 'bridge|cau noi', ''],
   ['irq', 'interrupt|interrupts|plic|clint|gic|nvic|ngat', ''],
+  /* security and crypto engines, and the chip's own managers (power, clock, reset, alerts, pins), are chip blocks too:
+     without these rows an "Alert handler" or an "AES" was taken for a software service */
+  ['crypto', 'aes|hmac|kmac|sha|sha2|sha256|sha3|otbn|keymgr|csrng|entropy|edn|trng|rng|pke|rsa|ecc|ecdsa|crypto|cryptographic|cipher|mat ma', 'key|keys'],
+  ['mgmt', 'pwrmgr|rstmgr|clkmgr|pmu|lifecycle|lc ctrl|alert|alerts|sensor|pinmux|padctrl|pad ctrl|pad control|sysrst|power manager|clock manager|reset manager|clock controller|reset controller|power controller|quan ly nguon|quan ly xung nhip', 'manager|mgr'],
+  ['debug', 'rv dm|debug module|jtag|dmi|swd|go loi', 'debug'],
   ['mem', 'sram|ram|rom|dram|ddr|ddr3|ddr4|ddr5|lpddr|lpddr4|lpddr5|hbm|otp|efuse|eeprom|tcm|bo nho', 'memory|flash'],
   ['bus', 'axi|axi3|axi4|ahb|apb|tl ul|tlul|tilelink|crossbar|xbar|interconnect|noc', 'bus|fabric|matrix'],
-  ['periph', 'uart|usart|spi|qspi|i2c|i2s|gpio|pwm|wdt|watchdog|adc|dac|usb|ethernet|sdio|rtc|jtag|ngoai vi', 'timer|debug|can|mac|phy']
+  ['periph', 'uart|usart|spi|qspi|i2c|i2s|gpio|pwm|wdt|watchdog|adc|dac|usb|ethernet|sdio|rtc|pattgen|ngoai vi', 'timer|can|mac|phy']
 ];
 var AS_HW_RES = null;
 function asWords(n) { return normText(asText(n.title) || str(n.id)).replace(/[^a-z0-9]+/g, ' ').trim(); }
@@ -1542,8 +1547,16 @@ function asSuggest(raw, di, st, id, memo) {
       if (apbish) periphs();
       else {
         if (!onto['hw:mem'] && !onto['hw:memctl']) link(['hw:mem', 'hw:memctl'], 'out', at('sgHwMem'), { id: 'sram', title: 'SRAM', icon: 'memory', color: 'amber', desc: at('dSram') }, 'bus');
-        if (!onto['hw:bridge'] && !onto['hw:bus']) link(['hw:bridge'], 'out', at('sgHwBridge'), { id: 'apb', title: at('nBridge'), icon: 'split', color: 'slate', desc: at('dBridge') }, 'bus', 'below');
+        /* TileLink (TL-UL) chips hang slow devices on a second crossbar, not on an APB bridge */
+        if (!onto['hw:bridge'] && !onto['hw:bus'] && !/(^| )(tl ul|tlul|tilelink)( |$)/.test(asWords(n))) link(['hw:bridge'], 'out', at('sgHwBridge'), { id: 'apb', title: at('nBridge'), icon: 'split', color: 'slate', desc: at('dBridge') }, 'bus', 'below');
       }
+      /* chip blocks that sit on no bus yet: this bus is the nearest place for them */
+      var busFed = {};
+      edges.forEach(function (e) { if (/^hw:(bus|bridge)$/.test(kindOf(str(e.from)) || '')) busFed[str(e.to)] = true; if (/^hw:(bus|bridge)$/.test(kindOf(str(e.to)) || '')) busFed[str(e.from)] = true; });
+      var looseDev = nearestOf(['hw:mem', 'hw:memctl', 'hw:periph', 'hw:crypto', 'hw:mgmt', 'hw:irq'], function (mid) { return busFed[mid]; });
+      if (looseDev) out.push({ label: asl('sgConnect', asName(looseDev)), ops: [{ op: 'connect', from: id, to: str(looseDev.id), kind: 'bus' }] });
+      var looseHost = nearestOf(['hw:cpu', 'hw:dma', 'hw:acc', 'hw:debug'], function (mid) { return busFed[mid]; });
+      if (looseHost) out.push({ label: asl('sgConnect', asName(looseHost)), ops: [{ op: 'connect', from: str(looseHost.id), to: id, kind: 'bus' }] });
     } else if (hk === 'bridge') {
       if (!into['hw:bus'] && !into['hw:cpu']) link(['hw:bus'], 'in', at('sgHwBus'), busNode(), 'bus');
       periphs();
@@ -1552,15 +1565,19 @@ function asSuggest(raw, di, st, id, memo) {
         var words = asWords(n), feed = /(^| )flash( |$)/.test(words) ? ['hw:periph'] : /(^| )(dram|ddr|ddr3|ddr4|ddr5|lpddr|lpddr4|lpddr5|hbm)( |$)/.test(words) && hk === 'mem' && hasKind('hw:memctl') ? ['hw:memctl'] : ['hw:bus'];
         link(feed, 'in', null, null, feed[0] === 'hw:bus' ? 'bus' : null);
       }
-      if (hk === 'memctl' && !onto['hw:mem']) addAfter(at('sgHwDram'), { id: 'dram', title: 'DRAM', icon: 'memory', color: 'amber', external: true, desc: at('dDram') });
-    } else if (hk === 'periph') {
-      if (!into['hw:bridge'] && !into['hw:bus']) link(nearestOf(['hw:bridge']) ? ['hw:bridge'] : ['hw:bus'], 'in');
-      var irqB = nearestOf(['hw:irq']);
-      if (irqB && !onto['hw:irq']) out.push({ label: asl('sgHwIrqTo', asName(irqB)), ops: [{ op: 'connect', from: id, to: str(irqB.id), kind: 'async', label: 'irq' }] });
+      if (hk === 'memctl' && !onto['hw:mem'] && /(^| )(dram|ddr|ddr3|ddr4|ddr5|lpddr|lpddr4|lpddr5|hbm|dimm)( |$)/.test(asWords(n))) addAfter(at('sgHwDram'), { id: 'dram', title: 'DRAM', icon: 'memory', color: 'amber', external: true, desc: at('dDram') });
+    } else if (hk === 'periph' || hk === 'crypto' || hk === 'mgmt') {
+      if (!into['hw:bridge'] && !into['hw:bus']) link(nearestOf(['hw:bridge']) ? ['hw:bridge'] : ['hw:bus'], 'in', null, null, 'bus');
+      /* an interrupt for peripherals and crypto engines; pin muxes, pads and sensors have none to send */
+      var irqB = nearestOf(['hw:irq']), quiet = /(^| )(pinmux|padctrl|pad|pads|sensor|ast)( |$)/.test(asWords(n));
+      if (irqB && !onto['hw:irq'] && hk !== 'mgmt' && !quiet) out.push({ label: asl('sgHwIrqTo', asName(irqB)), ops: [{ op: 'connect', from: id, to: str(irqB.id), kind: 'async', label: 'irq' }] });
+    } else if (hk === 'debug') {
+      /* a debug module is a bus host (it reads and writes memory for the debugger) */
+      if (!onto['hw:bus'] && !onto['hw:bridge']) link(['hw:bus'], 'out', at('sgHwBus'), busNode(), 'bus');
     } else if (hk === 'irq') {
       if (!onto['hw:cpu']) link(['hw:cpu'], 'out', null, null, 'async', null, 'irq');
     }
-  } else if (myKind) {
+  } else if (myKind && !(ctx.hw >= 3 && myKind === 'service')) {
     if (myKind === 'service') {
       offer('db', at('sgDb'), { id: 'db', shape: 'database', title: at('nDb') }, 'storage');
       offer('cache', at('sgCache'), { id: 'cache', title: at('nCache'), icon: 'zap', color: 'amber', size: 'sm', desc: at('dCache') }, 'storage', 'below');
@@ -1673,6 +1690,13 @@ function asNextSteps(raw, di, st, memo) {
     out.push({ node: id, label: label, ops: s.ops, pattern: s.pattern, clock: s.clock, select: s.select, why: s.why });
   };
   asHeals(d).forEach(function (p) { add(p.from, { label: asl('nsHeal', asName(nodes[p.from]), asName(nodes[p.to])), ops: [p.op] }); });
+  /* a chip drawn automatically around a bus with many blocks: the bus-as-bar arrangement reads far better */
+  if (!asManual(d) && !str(d.boardOf) && !d.detailOf && (d.nodes || []).length >= 10 && typeof hierArrangeBus === 'function') {
+    var busDeg = {};
+    (d.edges || []).forEach(function (e) { if (e && e.kind === 'bus') [str(e.from), str(e.to)].forEach(function (k) { busDeg[k] = (busDeg[k] || 0) + 1; }); });
+    var hub0 = Object.keys(busDeg).filter(function (k) { return nodes[k] && busDeg[k] >= 6; })[0];
+    if (hub0) { out.push({ node: hub0, label: typeof ht === 'function' ? ht('nsArrange') : 'Arrange', ops: [{ op: 'arrange', style: 'bus' }] }); seen['arrange'] = true; }
+  }
   var deg = {}, outDeg = {};
   (d.edges || []).forEach(function (e) {
     if (!e) return;

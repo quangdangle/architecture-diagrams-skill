@@ -76,6 +76,10 @@ Engineers draw an overview first, then each block in detail. Keep the levels lin
 - `assist.py design.json --inside FRAME --diagram BOARD -o design.json` moves what is drawn in one frame to its own tab, with copies of the frame's ports on the border. The frame keeps its ports and links to the tab (▸); ports added, renamed or removed on either side follow on the other.
 - Port names follow RTL practice: `i_`/`o_`/`io_` in front, snake_case, `_n` for active-low. The checks flag other names on hardware tabs with a fix; the editor's Settings can switch to `_i`/`_o` at the end or turn the check off.
 
+## Arranging a chip overview
+
+An SoC overview with a crossbar and many blocks is hard to read in the automatic layout (every wire fans out from one box). The `arrange` operation (`{"op": "arrange", "style": "bus"}`, also offered as a next step and used by the AI in the page) draws it the way chip block diagrams are drawn by hand: each bus or crossbar a long bar, groups kept together in rows above and below it, hosts on top, straight wires to the bars and the other wires along the corridors between rows. Mark bus wires with `"kind": "bus"`.
+
 ## Sticky notes
 
 `"notes"` on a tab holds sticky notes: a text, a kind (`note`, `constraint`, `reason`, `change`, `question`, `todo`, `legend`), a date, an author, and an `attach` (block, frame or `[from, to]` wire) so the note moves with it. The editor adds one with N, lists them in a Notes pane, and offers notes written from the diagram (clock-domain crossings, reset release, unwired pins, memory and bus details, a colour legend). Use them for the "why" that does not fit in a block: constraints, decisions, open questions.

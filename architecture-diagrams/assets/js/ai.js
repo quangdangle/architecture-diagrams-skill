@@ -103,7 +103,8 @@ var AI_OPS_DOC = [
   '- addGroup {group: {id, label, color, parent, x, y, w, h}}, updateGroup {id, set}: frames.',
   '- addNote {note: {text, kind, attach}}: a sticky note; kind is note, constraint, reason, change, question, todo or legend; attach is a block or frame id or [from, to].',
   '- updateNote {id, set}, removeNote {id}. updateDiagram {set: {layout, route, direction, title, summary, tag, legend}}. A field an op does not know is an error.',
-  '- tidyFrame {id}: lays out the blocks inside a frame in layers (signals left to right), lines its ports up with them and fits the frame. End with it after drawing the inside of a frame; then rough x, y are enough.'
+  '- tidyFrame {id}: lays out the blocks inside a frame in layers (signals left to right), lines its ports up with them and fits the frame. End with it after drawing the inside of a frame; then rough x, y are enough.',
+  '- arrange {style: "bus"}: lays the whole tab out as a chip block diagram: every bus or crossbar a long bar, each group of blocks kept together in a row above or below the bar it hangs on, hosts above, straight wires to the bars. Use it when asked to tidy or arrange a chip or SoC diagram, and after adding many blocks to one; it needs bus wires (kind "bus") to the bars.'
 ].join('\n');
 var AI_SCHEMA = { type: 'object', properties: {
   ops: { type: 'array', items: { type: 'object' } },
@@ -278,15 +279,18 @@ function aiDiff(a, b) {
   var mapE = function (d) { var m = {}; (d.edges || []).forEach(function (e) { if (e) m[str(e.from) + '>' + str(e.to) + '|' + JSON.stringify(e.fromAnchor || '') + JSON.stringify(e.toAnchor || '')] = JSON.stringify(e); }); return m; };
   var mapG = function (d) { var m = {}; (d.groups || []).forEach(function (g) { if (g && str(g.id)) m[str(g.id)] = JSON.stringify(g); }); return m; };
   var mapQ = function (d) { var m = {}; (d.notes || []).forEach(function (q) { if (q && str(q.id)) m[str(q.id)] = JSON.stringify(q); }); return m; };
-  var out = { add: { n: [], e: [], g: [], q: [] }, chg: { n: [], e: [], g: [], q: [] }, del: { n: [], e: [], g: [], q: [] } };
-  [['n', mapN], ['e', mapE], ['g', mapG], ['q', mapQ]].forEach(function (k) {
+  /* the tab's own settings (direction, layout, legend, title...) count as one change: without this a change of
+     direction showed "no change" and could not be applied */
+  var mapT = function (d) { var c = {}; Object.keys(d || {}).forEach(function (k) { if (['nodes', 'edges', 'groups', 'notes', 'drawio'].indexOf(k) < 0) c[k] = d[k]; }); var m = {}; m.tab = JSON.stringify(c); return m; };
+  var out = { add: { n: [], e: [], g: [], q: [], t: [] }, chg: { n: [], e: [], g: [], q: [], t: [] }, del: { n: [], e: [], g: [], q: [], t: [] } };
+  [['n', mapN], ['e', mapE], ['g', mapG], ['q', mapQ], ['t', mapT]].forEach(function (k) {
     var x = k[1](a), y = k[1](b);
     Object.keys(y).forEach(function (id) { if (!(id in x)) out.add[k[0]].push(id); else if (x[id] !== y[id]) out.chg[k[0]].push(id); });
     Object.keys(x).forEach(function (id) { if (!(id in y)) out.del[k[0]].push(id); });
   });
   return out;
 }
-function aiCount(part) { return part.n.length + part.e.length + part.g.length + part.q.length; }
+function aiCount(part) { return part.n.length + part.e.length + part.g.length + part.q.length + (part.t ? part.t.length : 0); }
 function aiPreview(p) {
   var di = p.di, after = p.after, info = p.info, diff = aiDiff(p.before.diagrams[di], after.diagrams[di]);
   if (ED.diag !== di) { ED.diag = di; ED.selected = null; ED.multi = null; ED.gsel = null; ED.nsel = null; edBuildForm(); edRender(); }
