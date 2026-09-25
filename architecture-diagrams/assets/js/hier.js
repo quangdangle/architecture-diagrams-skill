@@ -574,7 +574,7 @@ function hierBuildBoard(raw, oi) {
   items.forEach(function (it) { if (str(it.n.group) && ovGroups[str(it.n.group)]) used[str(it.n.group)] = true; });
   Object.keys(used).forEach(function (gid) {
     var g = ovGroups[gid], c = { id: asNodes(ov)[gid] ? gid + '_grp' : gid };
-    ['label', 'color', 'icon'].forEach(function (k) { if (g[k] !== undefined) c[k] = edClone(g[k]); });
+    ['label', 'color', 'icon', 'hidden'].forEach(function (k) { if (g[k] !== undefined) c[k] = edClone(g[k]); });
     if (!c.label) c.label = gid;
     used[gid] = c.id;
     board.groups.push(c);
@@ -907,8 +907,14 @@ function hierOpenInside(raw, ti, blockId) {
   doc.diagrams.splice(at2, 0, D);
   return { raw: doc, index: at2 };
 }
+/* A bend point moved by dx, dy, in the form it came in: [x, y] (this tool) or {x, y} (read from draw.io). */
+function hierMovePt(p, dx, dy) {
+  if (Array.isArray(p)) return [Math.round(+p[0] + dx), Math.round(+p[1] + dy)];
+  if (p && typeof p === 'object' && finiteNum(p.x) !== null) { var q = edClone(p); q.x = Math.round(+p.x + dx); q.y = Math.round(+p.y + dy); return q; }
+  return p;
+}
 function hierShiftEdge(e, dx, dy) {
-  var mv = function (p) { return Array.isArray(p) ? [Math.round(+p[0] + dx), Math.round(+p[1] + dy)] : p; };
+  var mv = function (p) { return hierMovePt(p, dx, dy); };
   if (Array.isArray(e.points)) e.points = e.points.map(mv);
   if (e.fromPoint) e.fromPoint = mv(e.fromPoint);
   if (e.toPoint) e.toPoint = mv(e.toPoint);
@@ -1362,7 +1368,7 @@ function hierPointerUp(ev, dr) {
   (d.edges || []).forEach(function (e) {
     if (!e) return;
     var a = inside[str(e.from)] || m.groups[str(e.from)], b = inside[str(e.to)] || m.groups[str(e.to)];
-    if (a && b && Array.isArray(e.points)) e.points = e.points.map(function (p) { return [Math.round(+p[0] + dx), Math.round(+p[1] + dy)]; });
+    if (a && b && Array.isArray(e.points)) e.points = e.points.map(function (p) { return hierMovePt(p, dx, dy); });
     else if ((a || b) && Array.isArray(e.points)) delete e.points;
   });
   ED.gsel = [dr.id];
@@ -1616,9 +1622,19 @@ function hierTidyFrame(d, gid) {
   var mT = Math.max(HB.top, reach.top + 30 + room.top), mB = Math.max(36, reach.bottom + 30 + room.bottom);
   var needW = mL + (bx2 - bx) + mR, needH = mT + (by2 - by) + mB;
   hierGrowFrame(d, g, Math.max(+g.w, needW), Math.max(+g.h, needH));
-  var ox = +g.x + mL + Math.max(0, (+g.w - needW) / 2) - bx, oy = +g.y + mT + Math.max(0, (+g.h - needH) / 2) - by;
-  inside.forEach(function (n) { var p = pos[str(n.id)]; n.x = Math.round((ox + p.x) / 10) * 10; n.y = Math.round((oy + p.y) / 10) * 10; });
-  wires.forEach(function (e) { delete e.points; });
+  var ox = +g.x + mL + Math.max(0, (+g.w - needW) / 2) - bx, oy = +g.y + mT + Math.max(0, (+g.h - needH) / 2) - by, delta = {};
+  inside.forEach(function (n) {
+    var p = pos[str(n.id)], x0 = finiteNum(n.x), y0 = finiteNum(n.y);
+    n.x = Math.round((ox + p.x) / 10) * 10; n.y = Math.round((oy + p.y) / 10) * 10;
+    delta[str(n.id)] = x0 !== null && y0 !== null ? [n.x - x0, n.y - y0] : null;
+  });
+  (d.edges || []).forEach(function (e) {
+    if (!e || !Array.isArray(e.points)) return;
+    var a = delta[str(e.from)], b = delta[str(e.to)];
+    if (a === undefined && b === undefined) return;
+    if (a && b && a[0] === b[0] && a[1] === b[1]) e.points = e.points.map(function (q) { return hierMovePt(q, a[0], a[1]); });
+    else delete e.points;
+  });
   hierAlignPorts(d, g, ports, wires, ids, size);
   return null;
 }
@@ -1724,7 +1740,7 @@ function hierShiftFrame(d, gid, dx, dy) {
   (d.edges || []).forEach(function (e) {
     if (!e || !Array.isArray(e.points)) return;
     var a = moved[str(e.from)] || inG[str(e.from)], b = moved[str(e.to)] || inG[str(e.to)];
-    if (a && b) e.points = e.points.map(function (q) { return [Math.round(+q[0] + dx), Math.round(+q[1] + dy)]; });
+    if (a && b) e.points = e.points.map(function (q) { return hierMovePt(q, dx, dy); });
     else if (a || b) delete e.points;
   });
 }

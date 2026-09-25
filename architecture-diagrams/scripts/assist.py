@@ -128,12 +128,17 @@ def describe(result):
         lines.append(("- advice: " if c.get("soft") else "- ") + c["text"])
         for f in c.get("fixes", []):
             lines.append(f"    fix{' (safe)' if f.get('safe') else ''}: {f['label']} -> " + json.dumps(f["ops"], ensure_ascii=False))
-    how_of = lambda s: (f'diagram_insert_pattern pattern={s["pattern"]} near={s["node"]}' + (f' clock={s["clock"]}' if s.get("clock") else "")) if s.get("pattern") else json.dumps(s.get("ops"), ensure_ascii=False)
+    def how_of(s):
+        if s.get("pattern"):
+            return (f'diagram_insert_pattern pattern={s["pattern"]}' + (f' near={s["node"]}' if s.get("node") else "") +
+                    (f' clock={s["clock"]}' if s.get("clock") else ""))
+        return json.dumps(s["ops"], ensure_ascii=False) if s.get("ops") else ""
     for s in result.get("nextSteps") or []:
-        lines.append(f'Next step: {s["label"]} -> {how_of(s)}')
+        how = how_of(s)
+        lines.append(f'Next step: {s["label"]}' + (f' -> {how}' if how else ""))
     for s in result.get("suggestions") or []:
-        how = (f'diagram_insert_pattern pattern={s["pattern"]} near={s["node"]}' + (f' clock={s["clock"]}' if s.get("clock") else "")) if s.get("pattern") else json.dumps(s.get("ops"), ensure_ascii=False)
-        lines.append(f'Suggestion for {s["node"]}: {s["label"]} -> {how}')
+        how = how_of(s)
+        lines.append(f'Suggestion for {s["node"]}: {s["label"]}' + (f' -> {how}' if how else ""))
     if result.get("truncated"):
         lines.append(f'(Only the first {len(result.get("suggestions") or [])} suggestions; ask for one block with node to see all of its own.)')
     return "\n".join(lines)

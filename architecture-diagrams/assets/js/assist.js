@@ -50,7 +50,9 @@ var AST = {
     yes: 'Yes', no: 'No', nBlock: 'New block', nState: 'New state', nDb: 'Database', nCache: 'Cache', nQueue: 'Queue', nApi: 'API gateway',
     nConsumer: 'Consumer', nReplica: 'Read replica', nClock: 'clk', nStep: 'New step', nEnd: 'End', nWeb: 'Web app', nBus: 'AXI interconnect',
     nBridge: 'AXI to APB bridge', nIrq: 'Interrupt controller', nCheck: 'Check?',
-    eBad: 'not an operation object', eThrew: 'could not be applied ({x})', eUnknown: 'unknown operation “{x}”', eNode: 'needs a "node" object', eId: '“{x}” is not a valid id (letters, digits and _ . : - only)',
+    eBad: 'not an operation object', eThrew: 'could not be applied ({x})', eField: 'unknown field {x} (known: {y})',
+    sgStartFrom: 'Start from the pattern “{x}”', sgFrameOpen: 'Open its inside, tab {x}', sgFrameInside: 'Move its inside to its own tab (--inside {x} --diagram {y})',
+    sgFrameTidy: 'Tidy the blocks inside it', sgFrameNote: 'Add a note', eUnknown: 'unknown operation “{x}”', eNode: 'needs a "node" object', eId: '“{x}” is not a valid id (letters, digits and _ . : - only)',
     eDup: 'the id “{x}” is already used', eShape: 'unknown shape “{x}”', eNoNode: 'there is no block “{x}”', ePin: 'block “{x}” has no pin “{y}”; its pins are {z}',
     eNoPins: 'block “{x}” has no named pins', eGroup: 'there is no group “{x}”', eEdge: 'no connection matches', eRename: 'change an id with renameNode',
     eNoTab: 'there is no tab “{x}”', eNotGraph: 'tab “{x}” is not a block diagram', eNoPattern: 'there is no pattern “{x}”', eStep: 'there is no step #{x}',
@@ -102,7 +104,9 @@ var AST = {
     yes: 'Có', no: 'Không', nBlock: 'Khối mới', nState: 'Trạng thái mới', nDb: 'Cơ sở dữ liệu', nCache: 'Cache', nQueue: 'Hàng đợi', nApi: 'API gateway',
     nConsumer: 'Dịch vụ nhận tin', nReplica: 'Bản sao chỉ đọc', nClock: 'clk', nStep: 'Bước mới', nEnd: 'Kết thúc', nWeb: 'Ứng dụng web', nBus: 'Bus AXI',
     nBridge: 'Cầu AXI sang APB', nIrq: 'Bộ điều khiển ngắt', nCheck: 'Kiểm tra?',
-    eBad: 'không phải một thao tác', eThrew: 'không áp dụng được ({x})', eUnknown: 'không có thao tác “{x}”', eNode: 'cần có đối tượng "node"', eId: '“{x}” không dùng làm mã được (chỉ chữ, số và _ . : -)',
+    eBad: 'không phải một thao tác', eThrew: 'không áp dụng được ({x})', eField: 'không có trường {x} (các trường có: {y})',
+    sgStartFrom: 'Bắt đầu từ mạch mẫu “{x}”', sgFrameOpen: 'Mở phần bên trong, tab {x}', sgFrameInside: 'Tách phần bên trong ra tab riêng (--inside {x} --diagram {y})',
+    sgFrameTidy: 'Sắp lại các khối bên trong', sgFrameNote: 'Thêm ghi chú', eUnknown: 'không có thao tác “{x}”', eNode: 'cần có đối tượng "node"', eId: '“{x}” không dùng làm mã được (chỉ chữ, số và _ . : -)',
     eDup: 'mã “{x}” đã có khối khác dùng', eShape: 'không có hình “{x}”', eNoNode: 'không có khối “{x}”', ePin: 'khối “{x}” không có chân “{y}”; các chân là {z}',
     eNoPins: 'khối “{x}” không có chân mang tên', eGroup: 'không có nhóm “{x}”', eEdge: 'không có đường nối nào khớp', eRename: 'đổi mã bằng thao tác renameNode',
     eNoTab: 'không có tab “{x}”', eNotGraph: 'tab “{x}” không phải sơ đồ khối', eNoPattern: 'không có mẫu “{x}”', eStep: 'không có bước số {x}',
@@ -324,10 +328,13 @@ function asClockFrom(d) {
 function asIsClock(d, n, clockFrom) {
   if (!n) return false;
   if (AS_CLOCK_SHAPES[normShape(n.shape)]) return true;
+  /* a clock port of a frame or of a block's inside tab brings a clock in through its inner pin */
+  if (n.port && typeof n.port === 'object') return str(n.port.kind) === 'clock' && str(n.port.dir) !== 'out';
   return !!(clockFrom || asClockFrom(d))[str(n.id)];
 }
 function asHasClock(d) { var cf = asClockFrom(d); return (Array.isArray(d.nodes) ? d.nodes : []).some(function (n) { return asIsClock(d, n, cf); }); }
 function asClockPin(n) {
+  if (n && n.port && typeof n.port === 'object') return asPinByName(n, 'INT');
   var outs = asPinsOf(n).filter(function (p) { return p.dir === 'out'; });
   return outs.filter(function (p) { return /CLK|OUT/i.test(p.name); })[0] || outs[0] || null;
 }
@@ -444,7 +451,14 @@ function asSetEnd(d, e, which, ref) {
   return null;
 }
 var AS_NODE_KEYS = ['title', 'desc', 'shape', 'icon', 'color', 'size', 'group', 'external', 'width', 'ports', 'initial', 'final', 'x', 'y', 'w', 'h', 'style', 'labelPos', 'src', 'port', 'detail'];
-var AS_EDGE_KEYS = ['label', 'kind', 'dir', 'route', 'points', 'style', 'labelAt', 'labelOffset', 'labelDist', 'minlen', 'weight', 'elbow'];
+var AS_EDGE_KEYS = ['label', 'kind', 'dir', 'route', 'points', 'style', 'labelAt', 'labelOffset', 'labelDist', 'minlen', 'weight', 'elbow', 'fromAnchor', 'toAnchor', 'fromPoint', 'toPoint', 'source'];
+var AS_GROUP_KEYS = ['label', 'color', 'parent', 'icon', 'hidden', 'x', 'y', 'w', 'h', 'source', 'detail', 'style'];
+var AS_TAB_KEYS = ['layout', 'route', 'direction', 'title', 'summary', 'tag', 'legend', 'spacing', 'font'];
+/* A field an operation does not know is an error, never silently dropped: a script or an AI then learns what to fix. */
+function asUnknownKeys(set, known) {
+  var bad = Object.keys(set).filter(function (k) { return known.indexOf(k) < 0; });
+  return bad.length ? asl('eField', bad.join(', '), known.join(', ')) : null;
+}
 var AS_OPS = {
   addNode: function (d, op, touched) {
     var n = op.node;
@@ -476,12 +490,22 @@ var AS_OPS = {
     if (!n) return asl('eNoNode', str(op.id));
     var set = op.set && typeof op.set === 'object' ? op.set : {};
     if (set.id !== undefined) return at('eRename');
+    var badN = asUnknownKeys(set, AS_NODE_KEYS);
+    if (badN) return badN;
     if (edHas(set.shape) && !edShapeKnown(set.shape)) return asl('eShape', str(set.shape));
     if (edHas(set.group) && !asGroupIds(d)[str(set.group)]) return asl('eGroup', str(set.group));
+    var x0 = finiteNum(n.x), y0 = finiteNum(n.y);
     Object.keys(set).forEach(function (k) {
       if (AS_NODE_KEYS.indexOf(k) < 0) return;
       if (set[k] === null || set[k] === '') delete n[k]; else n[k] = k === 'title' || k === 'desc' ? asText(set[k]) : edClone(set[k]);
     });
+    /* a block that moved takes the bends of its own loops along (a feedback wire from an output back to an input) */
+    var x1 = finiteNum(n.x), y1 = finiteNum(n.y);
+    if (x0 !== null && y0 !== null && x1 !== null && y1 !== null && (x1 !== x0 || y1 !== y0) && typeof hierMovePt === 'function') {
+      (d.edges || []).forEach(function (e) {
+        if (e && str(e.from) === str(n.id) && str(e.to) === str(n.id) && Array.isArray(e.points)) e.points = e.points.map(function (q) { return hierMovePt(q, x1 - x0, y1 - y0); });
+      });
+    }
     (Array.isArray(op.unset) ? op.unset : []).forEach(function (k) { if (k !== 'id') delete n[k]; });
     touched.push(str(n.id));
     return null;
@@ -498,6 +522,7 @@ var AS_OPS = {
   renameNode: function (d, op, touched) {
     var to = str(op.to);
     if (!AS_ID_RE.test(to)) return asl('eId', to);
+    if (str(op.id) === to && asNodes(d)[to] && (op.index === undefined || op.index === null)) return null;
     if (asNodes(d)[to]) return asl('eDup', to);
     if (op.index !== undefined && op.index !== null) {
       /* one row only (a duplicate or a missing id): connections keep pointing where they did */
@@ -551,11 +576,11 @@ var AS_OPS = {
   updateEdge: function (d, op) {
     var k = asEdgeRef(d, op);
     if (typeof k === 'string') return k;
-    var e = d.edges[k], set = op.set && typeof op.set === 'object' ? op.set : {}, err = null;
+    var e = d.edges[k], set = op.set && typeof op.set === 'object' ? op.set : {}, err = asUnknownKeys(set, AS_EDGE_KEYS.concat(['from', 'to']));
+    if (err) return err;
     Object.keys(set).forEach(function (q) {
       if (err) return;
       if (q === 'from' || q === 'to') { err = asSetEnd(d, e, q, set[q]); return; }
-      if (AS_EDGE_KEYS.indexOf(q) < 0) return;
       if (set[q] === null || set[q] === '') delete e[q]; else e[q] = q === 'label' ? asText(set[q]) : edClone(set[q]);
     });
     (Array.isArray(op.unset) ? op.unset : []).forEach(function (q) { if (q !== 'from' && q !== 'to') delete e[q]; });
@@ -584,7 +609,9 @@ var AS_OPS = {
       if (!groups[pid]) return asl('eGroup', pid);
       for (var up = pid; up && hops < 50; hops++) { if (up === str(op.id)) return asl('eGroup', pid); up = groups[up] && groups[up].parent ? str(groups[up].parent) : null; }
     }
-    ['label', 'color', 'parent', 'icon', 'hidden', 'x', 'y', 'w', 'h', 'source', 'detail'].forEach(function (k) {
+    var badG = asUnknownKeys(set, AS_GROUP_KEYS);
+    if (badG) return badG;
+    AS_GROUP_KEYS.forEach(function (k) {
       if (!(k in set)) return;
       if (set[k] === null || set[k] === '') delete g[k]; else g[k] = k === 'label' ? asText(set[k]) : edClone(set[k]);
     });
@@ -599,10 +626,13 @@ var AS_OPS = {
   },
   updateDiagram: function (d, op) {
     var set = op.set && typeof op.set === 'object' ? op.set : {};
-    ['layout', 'route', 'direction', 'title'].forEach(function (k) {
+    var bad = asUnknownKeys(set, AS_TAB_KEYS);
+    if (bad) return bad;
+    AS_TAB_KEYS.forEach(function (k) {
       if (!(k in set)) return;
-      if (set[k] === null || set[k] === '') delete d[k]; else d[k] = k === 'title' ? asText(set[k]) : set[k];
+      if (set[k] === null || set[k] === '') delete d[k]; else d[k] = k === 'title' || k === 'summary' ? asText(set[k]) : edClone(set[k]);
     });
+    (Array.isArray(op.unset) ? op.unset : []).forEach(function (k) { if (AS_TAB_KEYS.indexOf(k) >= 0) delete d[k]; });
     return null;
   }
 };
@@ -689,7 +719,16 @@ function asPatternOps(raw, di, st, pid, near, center, clock) {
 
   /* how the pattern meets the selected block */
   var nn = near ? nodes[str(near)] : null, plan = null, used = asUsed(d);
-  if (nn) {
+  if (nn && nn.port && typeof nn.port === 'object') {
+    /* a port of a frame or of a block's inside tab: only its inner pin (INT) takes part; the outer one belongs to the
+       rest of the board. An input port feeds the pattern (its clock pins when it carries a clock); an output port
+       takes the pattern's output. */
+    var nidP = str(nn.id), intPin = asPinByName(nn, 'INT'), pdir = str(nn.port.dir);
+    if (intPin && pdir !== 'out') {
+      if (asIsClock(d, nn) && pat.clocks && pat.clocks.length) plan = { src: nidP, srcPin: intPin, pins: pat.clocks[0].pins, kind: 'clock', clock: true };
+      else if (pat.inputs && pat.inputs.length) plan = { src: nidP, srcPin: intPin, pins: pat.inputs[0].pins, kind: pat.inputs[0].kind };
+    } else if (intPin && pat.outputs && pat.outputs.length) plan = { reverse: true, dst: nidP, dstPin: intPin, from: pat.outputs[0], kind: pat.outKind };
+  } else if (nn) {
     var nid = str(nn.id), clk = asIsClock(d, nn) && pat.clocks && pat.clocks.length;
     if (clk) plan = { src: nid, srcPin: asClockPin(nn), pins: pat.clocks[0].pins, kind: 'clock', clock: true };
     else {
@@ -705,7 +744,10 @@ function asPatternOps(raw, di, st, pid, near, center, clock) {
   }
 
   /* a block-level pattern: the selected block feeds its entry block, from an output pin when it has one */
-  if (!plan && nn && !pat.pins && pat.entry && map[pat.entry.node] && !asIsClock(d, nn)) {
+  /* ...unless the pattern already feeds its entry block itself (a clock tree's PLL runs from its own oscillator):
+     a second source would be wrong, so the pattern then only sits next to the block */
+  var entryFed = pat.entry && pat.entry.kind === 'clock' && (pat.edges || []).some(function (e) { return String(e.to).split('.')[0] === pat.entry.node; });
+  if (!plan && nn && !pat.pins && pat.entry && map[pat.entry.node] && !asIsClock(d, nn) && !entryFed) {
     plan = { entry: true, srcPin: asPickOut(asPinsOf(nn).filter(function (p) { return p.dir === 'out'; })) || null };
   }
   /* a synchronizer (cdc) takes the clock of another domain: the one asked for, or the only other one */
@@ -835,13 +877,14 @@ function asPatternOps(raw, di, st, pid, near, center, clock) {
   lbox.forEach(function (b) { if (b.id) abs[b.id] = { x: b.x + origin.x, y: b.y + origin.y, w: b.w, h: b.h }; });
   var point = function (ref) { var n = localNode(ref), p = localPin(ref), b = n ? abs[n.id] : null; return b && p ? asPinPoint(b, p) : null; };
 
+  /* a pattern with frames of its own (clock domains) keeps them apart from the frames already drawn */
   (pat.groups || []).forEach(function (g) {
     var grp = { id: gmap[g.id], label: asText(g.label), color: g.color };
     if (g.parent && gmap[g.parent]) grp.parent = gmap[g.parent];
     ops.push({ op: 'addGroup', group: grp });
   });
   var hasInitial = (d.nodes || []).some(function (m) { return m && m.initial === true; });
-  var joinGroup = placed && nn && nn.group && !(pat.groups || []).length && asGroupIds(d)[str(nn.group)] ? str(nn.group) : null;
+  var joinGroup = nn && nn.group && !(pat.groups || []).length && asGroupIds(d)[str(nn.group)] ? str(nn.group) : null;
   if (pat.cdc && nn) {
     /* a synchronizer belongs to the destination domain, but only joins its frame when it sits next to it */
     joinGroup = null;
@@ -1953,6 +1996,7 @@ function runCliAssist() {
       var res = asApplyOps(raw, di, ops, st);
       if (res.errors.length) { done({ error: res.errors.join('\n'), errors: res.errors }); return; }
       raw = res.raw;
+      if (typeof hierSync === 'function') hierSync(raw, di);
       result.ops = ops;
       currentRaw = raw;
       renderSpec(raw, true);
@@ -1961,10 +2005,34 @@ function runCliAssist() {
     result.notes = notes;
     result.checks = asChecks(raw, di);
     if (cmd.action === 'suggest') {
-      var nodes = cmd.node ? [str(cmd.node)] : Object.keys(asNodes(raw.diagrams[di]));
-      if (cmd.node && !asNodes(raw.diagrams[di])[str(cmd.node)]) { done({ error: asl('eNoNode', cmd.node) }); return; }
+      var dd = raw.diagrams[di], nodes = cmd.node ? [str(cmd.node)] : Object.keys(asNodes(dd));
+      /* a frame of a detail board: what can be done with it, and the notes worth writing about it */
+      if (cmd.node && !asNodes(dd)[str(cmd.node)] && asGroupIds(dd)[str(cmd.node)]) {
+        var fid = str(cmd.node), fr = asGroupIds(dd)[fid];
+        result.suggestions = [];
+        if (str(fr.detail)) result.suggestions.push({ node: fid, label: asl('sgFrameOpen', str(fr.detail)) });
+        else if (str(fr.source)) result.suggestions.push({ node: fid, label: asl('sgFrameInside', fid, tab) });
+        if ((dd.nodes || []).some(function (n) { return n && str(n.group) === fid && !n.port; })) result.suggestions.push({ node: fid, label: at('sgFrameTidy'), ops: [{ op: 'tidyFrame', id: fid }] });
+        if (typeof hierNoteIdeas === 'function') hierNoteIdeas(raw, di, null, [fid]).forEach(function (q) {
+          result.suggestions.push({ node: fid, label: at('sgFrameNote') + ': ' + q.text, ops: [{ op: 'addNote', note: { text: q.text, kind: q.kind, attach: q.attach || fid } }] });
+        });
+        done(result);
+        return;
+      }
+      if (cmd.node && !asNodes(dd)[str(cmd.node)]) { done({ error: asl('eNoNode', cmd.node) }); return; }
       result.suggestions = [];
       var st2 = asStateOf(raw, di), memo = asMemo(raw, di, st2);
+      /* an empty tab: where to start, as the editor's start panel offers it */
+      if (!(dd.nodes || []).length) {
+        result.nextSteps = [];
+        AS_PAT_CATS.forEach(function (cat) {
+          asPatternList().filter(function (p) { return p.cat === cat[0] && p.top; }).forEach(function (p) {
+            result.nextSteps.push({ node: null, label: asl('sgStartFrom', asText(p.title)), pattern: p.id });
+          });
+        });
+        done(result);
+        return;
+      }
       if (!cmd.node) result.nextSteps = asNextSteps(raw, di, st2, memo).map(function (s) {
         var item = { node: s.node, label: s.label };
         if (s.pattern) { item.pattern = s.pattern; if (s.clock) item.clock = s.clock; } else item.ops = s.ops;

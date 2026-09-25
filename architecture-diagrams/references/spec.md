@@ -233,7 +233,9 @@ An end of a connection is a block id (`"ff2"`) or a block and one of its pins (`
 | `updateEdge` | `edge` (or `from`/`to`), `set`, `unset` | Changes label, kind, route…; `set.from` / `set.to` point an end elsewhere. |
 | `addGroup`, `updateGroup` | `group` object; `id`, `set`, `unset` | Adds or changes a group. |
 | `removeStep` | `index` | Removes one step. |
-| `updateDiagram` | `set` with `layout`, `route`, `direction`, `title` | Changes the tab itself. |
+| `updateDiagram` | `set` with `layout`, `route`, `direction`, `title`, `summary`, `tag`, `legend`, `spacing`, `font` | Changes the tab itself. |
+
+A field an update operation does not know is an error (the message lists the known fields), never silently dropped.
 | `addNote` | `note` (`text`, `kind`, `attach`, `x`, `y`, `dx`, `dy`, `w`, `date`, `by`) | Adds a sticky note; `date` defaults to today. |
 | `updateNote`, `removeNote` | `id`, `set`, `unset`; `id` | Changes or removes a note. |
 | `tidyFrame` | `id` (a frame with a fixed box) | Lays out the blocks inside the frame in layers (signals left to right), slides each port along its side to face the block it leads to, and grows the frame to fit. |

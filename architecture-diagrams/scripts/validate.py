@@ -308,8 +308,12 @@ def _check_diagram(d, where, errors, warnings, top_level):
                     errors.append(f'{where}: spacing "{key}" must be a positive number.')
 
     nodes = d.get("nodes")
-    if not isinstance(nodes, list) or not nodes:
-        errors.append(f'{where}: needs a non-empty "nodes" list.')
+    if nodes is not None and not isinstance(nodes, list):
+        errors.append(f'{where}: "nodes" must be a list.')
+        return
+    if not nodes:
+        # an empty tab is where a drawing starts (the editor shows "where to start"); nothing else to check yet
+        warnings.append(f'{where}: no blocks yet. Add blocks, or start from a pattern (assist.py --patterns, then --pattern ID).')
         return
 
     groups = d.get("groups", [])

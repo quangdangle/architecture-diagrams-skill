@@ -394,3 +394,80 @@ class DetailBoards(unittest.TestCase):
         self.assertEqual(frame_ports, tab_ports)
         self.assertEqual(tabs[inside["inside"]]["detailOf"], {"tab": board["board"], "block": "uart"})
 
+
+class RedrawFindings(unittest.TestCase):
+    """Bugs found when an agent redrew the OpenTitan Earl Grey top level with the tool (25/09/2026)."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not find_browser():
+            raise unittest.SkipTest("needs Chrome, Chromium, Edge or Brave")
+
+    @staticmethod
+    def soc():
+        return {"title": "t", "diagrams": [{"id": "top", "title": "Top", "groups": [{"id": "aon", "label": "Always on"}, {"id": "pd", "label": "Power domain", "hidden": True}],
+                "nodes": [{"id": "osc", "title": "Oscillator", "shape": "oscillator"}, {"id": "clkmgr", "title": "Clock manager", "group": "aon"},
+                          {"id": "cpu", "title": "CPU", "group": "pd"}, {"id": "xbar", "title": "TL-UL crossbar", "group": "pd"}, {"id": "uart", "title": "UART"}],
+                "edges": [{"from": "osc", "to": "clkmgr", "kind": "clock", "label": "clk"}, {"from": "cpu", "to": "xbar", "kind": "bus"}, {"from": "xbar", "to": "uart", "kind": "bus"}]}]}
+
+    def test_updates_keep_every_field_they_are_given_and_refuse_unknown_ones(self):
+        spec = self.soc()
+        out = assist.apply_ops(spec, [{"op": "updateEdge", "from": "cpu", "to": "xbar", "set": {"fromAnchor": [1, 0.5], "toAnchor": [0, 0.5]}},
+                                      {"op": "updateDiagram", "set": {"legend": {"colors": {"blue": "hosts"}}, "summary": "Top level"}}], diagram="top")
+        d = out["spec"]["diagrams"][0]
+        e = [x for x in d["edges"] if x["from"] == "cpu"][0]
+        self.assertEqual((e["fromAnchor"], e["toAnchor"]), ([1, 0.5], [0, 0.5]))
+        self.assertEqual(d["legend"], {"colors": {"blue": "hosts"}})
+        with self.assertRaises(assist.AssistError) as caught:
+            assist.apply_ops(spec, [{"op": "updateEdge", "from": "cpu", "to": "xbar", "set": {"colour": "red"}}], diagram="top")
+        self.assertIn("colour", str(caught.exception))
+        same = assist.apply_ops(spec, [{"op": "renameNode", "id": "uart", "to": "uart"}], diagram="top")
+        self.assertIn("uart", [n["id"] for n in same["spec"]["diagrams"][0]["nodes"]])
+
+    def test_the_board_keeps_hidden_groups_and_follows_edits_made_with_ops(self):
+        board = assist.build_board(self.soc())
+        b = [d for d in board["spec"]["diagrams"] if d.get("boardOf")][0]
+        self.assertTrue([g for g in b["groups"] if g["id"] == "pd"][0].get("hidden"))
+        after = assist.apply_ops(board["spec"], [{"op": "connect", "from": "cpu", "to": "uart", "label": "debug"}], diagram="top")
+        b2 = [d for d in after["spec"]["diagrams"] if d.get("boardOf")][0]
+        self.assertEqual(len(b2["edges"]), len(b["edges"]) + 1)
+
+    def test_patterns_next_to_a_clock_port_use_its_inner_pin(self):
+        board = assist.build_board(self.soc())
+        tab = board["board"]
+        b = [d for d in board["spec"]["diagrams"] if d.get("id") == tab][0]
+        port = [n for n in b["nodes"] if n.get("port", {}).get("of") == "clkmgr" and n["port"].get("kind") == "clock"][0]
+        div = assist.insert_pattern(board["spec"], "clkdiv2", near=port["id"], diagram=tab)
+        d = [x for x in div["spec"]["diagrams"] if x.get("id") == tab][0]
+        wires = [e for e in d["edges"] if e["from"] == port["id"] or e["to"] == port["id"]]
+        inner = {"x": 0.5, "y": 1} if port["shape"].endswith("-v") else {"x": 1, "y": 0.5}
+        self.assertTrue(any(e["from"] == port["id"] and e.get("kind") == "clock" and e["to"] != port["id"] and
+                            {k: e["fromAnchor"][k] for k in ("x", "y")} == inner for e in wires if e.get("source") is None), wires)
+        self.assertFalse([e for e in wires if e["to"] == port["id"] and not e.get("source")], wires)
+        self.assertEqual(len([n for n in d["nodes"] if n.get("shape") == "oscillator"]), 0)
+        icg = assist.insert_pattern(board["spec"], "icg", near=port["id"], clock=port["id"], diagram=tab)
+        d = [x for x in icg["spec"]["diagrams"] if x.get("id") == tab][0]
+        latch = [n for n in d["nodes"] if n.get("shape") == "latch"][0]
+        into_d = [e for e in d["edges"] if e["to"] == latch["id"] and (e.get("toAnchor") or {}).get("y") == 0.3]
+        self.assertTrue(into_d and all(e["from"] != port["id"] for e in into_d), into_d)
+
+    def test_a_loop_moves_with_its_block(self):
+        spec = {"title": "t", "diagrams": [{"id": "c", "title": "c", "layout": "manual", "nodes": [{"id": "ff", "shape": "dff", "x": 100, "y": 100}],
+                "edges": [{"from": "ff", "fromAnchor": [1, 0.78], "to": "ff", "toAnchor": [0, 0.3], "points": [[180, 160], [80, 160]]}]}]}
+        out = assist.apply_ops(spec, [{"op": "updateNode", "id": "ff", "set": {"x": 300, "y": 150}}], diagram="c")
+        self.assertEqual(out["spec"]["diagrams"][0]["edges"][0]["points"], [[380, 210], [280, 210]])
+
+    def test_a_clock_tree_next_to_a_clock_manager_joins_its_group_without_a_second_clock(self):
+        out = assist.insert_pattern(self.soc(), "clktree", near="clkmgr", diagram="top")
+        d = out["spec"]["diagrams"][0]
+        self.assertEqual({n.get("group") for n in d["nodes"] if n["id"] in ("pll", "div")}, {"aon"})
+        self.assertFalse([e for e in d["edges"] if e["from"] == "clkmgr" and e["to"] == "pll"])
+
+    def test_an_empty_tab_is_a_place_to_start(self):
+        spec = {"title": "t", "diagrams": [{"id": "top", "title": "Top"}]}
+        errors, warnings = validate_spec(spec)
+        self.assertEqual(errors, [])
+        self.assertTrue(any("no blocks yet" in w for w in warnings))
+        steps = assist.suggest(spec)["nextSteps"]
+        self.assertTrue(len(steps) >= 5 and all(s.get("pattern") for s in steps), steps)
+

@@ -102,7 +102,7 @@ var AI_OPS_DOC = [
   '- connect {from, to, kind, label, dir, route, points}: a wire. An end is a block id or "block.PIN" for a pin. disconnect / reverseEdge / updateEdge name a wire by {edge: index} or {from, to}.',
   '- addGroup {group: {id, label, color, parent, x, y, w, h}}, updateGroup {id, set}: frames.',
   '- addNote {note: {text, kind, attach}}: a sticky note; kind is note, constraint, reason, change, question, todo or legend; attach is a block or frame id or [from, to].',
-  '- updateNote {id, set}, removeNote {id}. updateDiagram {set: {layout, route, direction, title}}.',
+  '- updateNote {id, set}, removeNote {id}. updateDiagram {set: {layout, route, direction, title, summary, tag, legend}}. A field an op does not know is an error.',
   '- tidyFrame {id}: lays out the blocks inside a frame in layers (signals left to right), lines its ports up with them and fits the frame. End with it after drawing the inside of a frame; then rough x, y are enough.'
 ].join('\n');
 var AI_SCHEMA = { type: 'object', properties: {
