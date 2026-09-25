@@ -596,6 +596,40 @@ class ArrangeStages(unittest.TestCase):
         again = assist.apply_ops(out["spec"], [{"op": "arrange", "style": "stages"}], diagram="core")
         self.assertEqual([(x["x"], x["y"]) for x in again["spec"]["diagrams"][0]["nodes"]], [(x["x"], x["y"]) for x in d["nodes"]])
 
+    def test_parallel_blocks_of_a_stage_become_sub_columns(self):
+        # an out-of-order core in the style of XiangShan, as the page's AI drew it on 25/09/2026
+        def g(i, grp, shape=None):
+            return {k: v for k, v in (("id", i), ("title", i.upper()), ("group", grp), ("shape", shape)) if v}
+        nodes = [g("fetch", "fe"), g("dec", "fe"), g("ren", "be"), g("disp", "be"), g("rob", "be", "fifo"),
+                 g("irs", "ex", "fifo"), g("frs", "ex", "fifo"), g("alu", "ex"), g("fpu", "ex")]
+        edges = [{"from": "fetch", "to": "dec"}, {"from": "dec", "to": "ren"}, {"from": "ren", "to": "disp"}, {"from": "disp", "to": "rob", "label": "alloc"},
+                 {"from": "disp", "to": "irs", "label": "int uop"}, {"from": "disp", "to": "frs", "label": "fp uop"},
+                 {"from": "irs", "to": "alu", "label": "issue"}, {"from": "frs", "to": "fpu", "label": "issue"},
+                 {"from": "alu", "to": "rob", "label": "complete"}, {"from": "fpu", "to": "rob", "label": "complete"}]
+        spec = {"title": "t", "diagrams": [{"id": "c", "title": "Core", "nodes": nodes, "edges": edges,
+                "groups": [{"id": x, "label": x.upper()} for x in ("fe", "be", "ex")]}]}
+        out = assist.apply_ops(spec, [{"op": "arrange", "style": "stages"}], diagram="c")
+        d = out["spec"]["diagrams"][0]
+        n = {x["id"]: x for x in d["nodes"]}
+        e = {(x["from"], x["to"]): x for x in d["edges"]}
+        # the queues in one sub-column, the units they feed in the next, each level with its queue
+        self.assertEqual(n["irs"]["x"], n["frs"]["x"])
+        self.assertGreater(n["alu"]["x"], n["irs"]["x"] + 100)
+        self.assertLess(n["irs"]["y"], n["frs"]["y"])
+        self.assertLess(n["alu"]["y"], n["fpu"]["y"])
+        # the wires back into the reorder buffer are one bundle: one row, one lane up, one label spot
+        a, b = e[("alu", "rob")], e[("fpu", "rob")]
+        self.assertEqual((a["points"][1][1], a["points"][2][0]), (b["points"][1][1], b["points"][2][0]))
+        self.assertEqual(a["toAnchor"], b["toAnchor"])
+        # queue symbols: a wire leaving one takes its output pin, a wire into one its input pin; the bundle, two wires
+        # into one queue, stays off the pin (an input pin takes one wire)
+        self.assertEqual(e[("irs", "alu")]["fromAnchor"], {"x": 1, "y": 0.5, "perimeter": False})
+        self.assertEqual(e[("disp", "irs")]["toAnchor"], {"x": 0, "y": 0.5, "perimeter": False})
+        self.assertEqual(a["toAnchor"][0], 0)
+        self.assertGreater(abs(a["toAnchor"][1] - 0.5), 0.05)
+        self.assertEqual([c for c in out["checks"] if not c.get("soft")], [])
+        self.assertFalse([c for c in out["checks"] if "under" in c["text"]], out["checks"])
+
     def test_stages_need_two_groups(self):
         spec = {"title": "t", "diagrams": [{"id": "f", "title": "Flow", "nodes": [{"id": "a"}, {"id": "b"}], "edges": [{"from": "a", "to": "b"}]}]}
         with self.assertRaises(assist.AssistError) as caught:

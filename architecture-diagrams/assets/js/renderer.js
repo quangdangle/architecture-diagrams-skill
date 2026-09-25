@@ -821,7 +821,12 @@ function layoutNotes(d, res, always) {
   /* things a note placed by default should not cover: blocks, frames of a detail board, group titles, wires and their
      labels, other notes; a note sits wholly inside a group frame (one that holds what it is about) or wholly outside */
   var solid = [], frames = [], segs = [];
-  Object.keys(res.nodes).forEach(function (id) { var p = res.nodes[id]; solid.push({ id: id, x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h }); });
+  Object.keys(res.nodes).forEach(function (id) {
+    var p = res.nodes[id], m = res.nodeM && res.nodeM[id], bx = p.x - p.w / 2, by = p.y - p.h / 2;
+    solid.push({ id: id, x: bx, y: by, w: p.w, h: p.h });
+    /* the caption of a symbol, under or beside it */
+    if (m && m.label) solid.push({ id: id, x: bx + m.label.x1, y: by + m.label.y1, w: m.label.x2 - m.label.x1, h: m.label.y2 - m.label.y1 });
+  });
   d.groups.forEach(function (g) {
     var b = (res.groups || {})[g.id];
     if (!b || g.hidden) return;
@@ -1009,7 +1014,8 @@ function finalizeBounds(d, res) {
   d.groups.forEach(function (gr) {
     var b = res.groups[gr.id];
     if (!b || gr.hidden) return;
-    if (gr.drawio || res.manual) add(b.x, b.y, b.x + b.w, b.y + b.h);
+    /* a group's title chip sits on its top border and can be wider than a narrow frame (styled draw.io groups have none) */
+    if (gr.drawio || Object.keys(gr.style || {}).length || !gr.label) add(b.x, b.y, b.x + b.w, b.y + b.h);
     else add(b.x, b.y - 12, Math.max(b.x + b.w, b.x + 14 + chipWidth(gr)), b.y + b.h);
   });
   res.edges.forEach(function (e, i) {

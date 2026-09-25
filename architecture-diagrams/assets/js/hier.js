@@ -1763,7 +1763,16 @@ function hierMeasure(d) {
   var out = {};
   if (typeof normalizeDiagram !== 'function' || typeof measureNode !== 'function') return out;
   var keep = problems.length, keepList = problemList.length;
-  try { var nd = normalizeDiagram(d, 0); nd.nodes.forEach(function (n) { var m = measureNode(n, nd); if (m && m.w && m.h) out[n.id] = { w: m.w, h: m.h }; }); } catch (err) { out = {}; }
+  /* w, h: the block itself; top, left, right, bottom: how far its caption (a symbol's name) reaches past it */
+  try {
+    var nd = normalizeDiagram(d, 0);
+    nd.nodes.forEach(function (n) {
+      var m = measureNode(n, nd);
+      if (!m || !m.w || !m.h) return;
+      var c = m.label || { x1: 0, y1: 0, x2: m.w, y2: m.h };
+      out[n.id] = { w: m.w, h: m.h, top: Math.max(0, -c.y1), left: Math.max(0, -c.x1), right: Math.max(0, c.x2 - m.w), bottom: Math.max(0, c.y2 - m.h) };
+    });
+  } catch (err) { out = {}; }
   problems.length = keep; problemList.length = keepList;
   return out;
 }
@@ -2018,8 +2027,16 @@ function hierLayoutNow(d) {
   problems.length = keep; problemList.length = keepList;
   return out;
 }
+/* the box of every block, with the caption of a symbol (its name under or beside it) */
 function hierBoxes(L, pad) {
-  return Object.keys(L.nodes).map(function (id) { var p = L.nodes[id]; return { id: id, x: p.x - p.w / 2 - pad, y: p.y - p.h / 2 - pad, w: p.w + 2 * pad, h: p.h + 2 * pad }; });
+  return Object.keys(L.nodes).map(function (id) {
+    var p = L.nodes[id], m = L.nodeM && L.nodeM[id], x1 = p.x - p.w / 2, y1 = p.y - p.h / 2, x2 = x1 + p.w, y2 = y1 + p.h;
+    if (m && m.label) {
+      var bx = x1, by = y1;
+      x1 = Math.min(x1, bx + m.label.x1); y1 = Math.min(y1, by + m.label.y1); x2 = Math.max(x2, bx + m.label.x2); y2 = Math.max(y2, by + m.label.y2);
+    }
+    return { id: id, x: x1 - pad, y: y1 - pad, w: x2 - x1 + 2 * pad, h: y2 - y1 + 2 * pad };
+  });
 }
 /* wires whose drawn path runs through a block that is neither of its ends: [{i: wire, via: block}]. A bus drawn as a
    long thin bar is not in the way: wires cross such bars by convention (the bar is drawn over them). */
@@ -2277,9 +2294,10 @@ function hierSplitPairs(d) {
   });
 }
 /* Each label at the point of its wire where it covers the fewest blocks, labels and other wires. */
-function hierPlaceLabels(d) {
+function hierPlaceLabels(d, keep) {
   var lay = hierLayoutNow(d);
   if (!lay) return;
+  keep = keep || [];
   var L = lay.L, blocks = hierBoxes(L, 3), segs = [], frames = [];
   L.edges.forEach(function (r, j) { var p = r.points || []; for (var k = 1; k < p.length; k++) segs.push({ j: j, a: p[k - 1], b: p[k] }); });
   /* a group title is drawn over the labels: a label under it would be hidden, so it counts as a block */
@@ -2318,16 +2336,26 @@ function hierPlaceLabels(d) {
         spots.push({ at: at, dist: dist, own: own, box: { x: b.x - 3, y: b.y - 3, w: b.w + 6, h: b.h + 6 } });
       });
     });
-    if (spots.length) items.push({ e: e, spots: spots, pick: null });
+    if (!spots.length) return;
+    /* a label placed on purpose (the one label of a bundle) stays, and the others keep off it */
+    if (keep.indexOf(e) >= 0) { var at0 = isFinite(+e.labelAt) ? +e.labelAt : 0, fixedSpot = spots.filter(function (sp) { return sp.at === at0 && !sp.dist; })[0];
+      if (!fixedSpot) { var pk = labelPoint(pts, at0, 0); fixedSpot = { at: at0, dist: 0, own: 0, box: { x: pk.x - lm.w / 2 - 3, y: pk.y - lm.h / 2 - 3, w: lm.w + 6, h: lm.h + 6 } }; }
+      items.push({ e: e, spots: [fixedSpot], pick: fixedSpot, fixed: true, text: str(asText(e.label)) }); return; }
+    items.push({ e: e, spots: spots, pick: null, text: str(asText(e.label)) });
   });
   /* one label after the other, then each again knowing where all the others went, until nothing moves: a label placed
      early gives way when that lets a later one off another label */
   var costOf = function (it, sp) {
-    return sp.own + items.reduce(function (t, o) { return o === it || !o.pick ? t : t + (cut(sp.box, o.pick.box) ? 10 : 0); }, 0);
+    return sp.own + items.reduce(function (t, o) {
+      if (o === it || !o.pick || !cut(sp.box, o.pick.box)) return t;
+      var same = it.fixed && o.fixed && it.text === o.text && Math.abs(sp.box.x - o.pick.box.x) < 2 && Math.abs(sp.box.y - o.pick.box.y) < 2;
+      return same ? t : t + 10;
+    }, 0);
   };
   for (var round = 0; round < 6; round++) {
     var moved = false;
     items.forEach(function (it) {
+      if (it.fixed) return;
       var best = null, bestCost = Infinity;
       it.spots.forEach(function (sp) { var c = costOf(it, sp); if (c < bestCost - 1e-9) { bestCost = c; best = sp; } });
       if (best !== it.pick) { it.pick = best; moved = true; }
@@ -2335,6 +2363,7 @@ function hierPlaceLabels(d) {
     if (!moved) break;
   }
   items.forEach(function (it) {
+    if (it.fixed) return;
     if (it.pick.at) it.e.labelAt = it.pick.at; else delete it.e.labelAt;
     if (it.pick.dist) it.e.labelDist = Math.round(it.pick.dist); else delete it.e.labelDist;
   });
@@ -2392,8 +2421,6 @@ function hierArrangeStages(d) {
     Object.keys(votes).forEach(function (s0) { if (!best || votes[s0] > votes[best] || (votes[s0] === votes[best] && col[s0] < col[best])) best = s0; });
     sat[id] = { stage: best || order[order.length - 1], above: into >= from };
   });
-  /* each stage stacked in the order its own wires run (a wire through a cache of the stage counts: PC → I-cache → fetch);
-     where the wires leave a choice, blocks wired to a cache above the column go up and those wired to one below go down */
   var lean = {};
   Object.keys(sat).forEach(function (sid) {
     edges.forEach(function (e) {
@@ -2405,7 +2432,11 @@ function hierArrangeStages(d) {
   nodes.forEach(function (n) { size[str(n.id)] = measured[str(n.id)] || hierRealSize(n); });
   hierFreeGroups(d);
   hierFreeNotes(d);
-  var stack = {};
+  /* Each stage stacked in the order its own wires run (a wire through a cache of the stage counts: PC → I-cache →
+     fetch); where the wires leave a choice, blocks wired to a cache above the column go up and those wired to one below
+     go down. A stage that is a set of parallel blocks feeding another set (issue queues and the units they feed), two or
+     three steps deep, is split into that many sub-columns, left to right; a long chain stays one column. */
+  var cols = [], stageCols = {};
   order.forEach(function (s0) {
     var mine = nodes.filter(function (n) { return stageOf[str(n.id)] === s0; }).map(function (n) { return str(n.id); });
     var indeg = {}, adj = {}, link = function (a, b) { if (adj[a] && adj[b] && a !== b && adj[a].indexOf(b) < 0) { adj[a].push(b); indeg[b]++; } };
@@ -2425,32 +2456,96 @@ function hierArrangeStages(d) {
       pool.splice(pool.indexOf(m), 1);
       adj[m].forEach(function (b) { indeg[b]--; });
     }
-    stack[s0] = out;
+    /* a block fed more by the stages before than from inside its own stage (the commit stage the execution units
+       report to) stays in the first sub-column, so those wires reach it straight; wires from later stages go back and
+       do not count, the caches of the stage count as inside it */
+    var layer = {}, pos = {}, widths = [], fedOut = {}, fedIn = {}, here = order.indexOf(s0);
+    out.forEach(function (m, k) { layer[m] = 0; pos[m] = k; fedOut[m] = 0; fedIn[m] = 0; });
+    edges.forEach(function (e) {
+      var a = str(e.from), b = str(e.to), sa = stageOf[a] || (sat[a] ? sat[a].stage : null);
+      if (back(e) || pos[b] === undefined || a === b || !sa) return;
+      if (sa === s0) fedIn[b]++;
+      else if (order.indexOf(sa) < here) fedOut[b]++;
+    });
+    out.forEach(function (m) {
+      if (fedOut[m] > fedIn[m]) layer[m] = 0;
+      adj[m].forEach(function (b) { if (pos[b] > pos[m]) layer[b] = Math.max(layer[b], layer[m] + 1); });
+    });
+    out.forEach(function (m) { widths[layer[m]] = (widths[layer[m]] || 0) + 1; });
+    var split = widths.length >= 2 && widths.length <= 3 && Math.max.apply(null, widths) >= 2;
+    var lists = split ? widths.map(function () { return []; }) : [[]];
+    out.forEach(function (m) { lists[split ? layer[m] : 0].push(m); });
+    /* a later sub-column in the order of the blocks feeding it, so the wires between them cross little */
+    for (var li = 1; li < lists.length; li++) {
+      var at = {};
+      lists[li - 1].forEach(function (m, k) { at[m] = k; });
+      var bary = function (m) { var s1 = 0, c1 = 0; Object.keys(at).forEach(function (p) { if (adj[p].indexOf(m) >= 0) { s1 += at[p]; c1++; } }); return c1 ? s1 / c1 : 1e9; };
+      lists[li] = lists[li].map(function (m, k) { return { m: m, b: bary(m), k: k }; }).sort(function (p, q) { return p.b - q.b || p.k - q.k; }).map(function (v) { return v.m; });
+    }
+    stageCols[s0] = [];
+    lists.forEach(function (list) { stageCols[s0].push(cols.length); cols.push({ stage: s0, members: list }); });
   });
-  var colW = order.map(function (s0) {
-    var w = HS.minCol;
-    stack[s0].forEach(function (m) { w = Math.max(w, size[m].w); });
-    Object.keys(sat).forEach(function (id) { if (sat[id].stage === s0) w = Math.max(w, size[id].w); });
+  var colOfBlock = {}, stageIdx = {};
+  cols.forEach(function (c, i) { c.members.forEach(function (m) { colOfBlock[m] = i; }); });
+  order.forEach(function (s0, i) { stageIdx[s0] = i; });
+  var first = function (c) { return stageCols[cols[c].stage][0] === c; }, last = function (c) { var l = stageCols[cols[c].stage]; return l[l.length - 1] === c; };
+  var full = function (m) { var z = size[m]; return { w: z.w + (z.left || 0) + (z.right || 0), h: z.h + (z.top || 0) + (z.bottom || 0) }; };
+  var colW = cols.map(function (c) {
+    var w = stageCols[c.stage].length > 1 ? 120 : HS.minCol;
+    c.members.forEach(function (m) { w = Math.max(w, full(m).w); });
     return w;
   });
+  /* the old route goes; an end tied to a pin of a symbol stays on it */
+  var pinAt = function (id, a) {
+    var n = byId[id], q = a ? normAnchor(a) : null;
+    return q ? asPinsOf(n).filter(function (pn) { return Math.abs(pn.x - q.x) <= 0.02 && Math.abs(pn.y - q.y) <= 0.02; })[0] || null : null;
+  };
+  var pinUse = {};
   (d.edges || []).forEach(function (e) {
     if (!e) return;
     delete e.points; delete e.labelAt; delete e.labelDist;
-    if (!asPinsOf(byId[str(e.from)]).length && !asPinsOf(byId[str(e.to)]).length) { delete e.fromAnchor; delete e.toAnchor; }
+    if (!pinAt(str(e.from), e.fromAnchor)) delete e.fromAnchor;
+    var tp = pinAt(str(e.to), e.toAnchor);
+    if (!tp) delete e.toAnchor;
+    else (pinUse[str(e.to)] = pinUse[str(e.to)] || {})[tp.name] = true;
   });
-  /* The wires between the columns. A wire to the next stage leaves its block on the right and enters the next on the
+  /* An end not tied to a pin gets a point on the side it leaves or enters by. On a symbol with pins (a queue, an ALU) it
+     takes the output pin of that side when there is one, or an input pin no other wire uses; else a point of the side
+     clear of every pin, drawn to the outline (a pin takes the wires meant for it only). */
+  var yOf = function (a) { return Array.isArray(a) ? +a[1] : +a.y; };
+  var anchorAt = function (id, side, frac, source, shared) {
+    var pins = asPinsOf(byId[id]), sx = side === 'E' ? 1 : 0;
+    if (!pins.length) return [sx, frac];
+    var here = pins.filter(function (pn) { return Math.abs(pn.x - sx) < 0.01; });
+    if (source) {
+      var outsHere = here.filter(function (pn) { return pn.dir === 'out'; });
+      if (outsHere.length === 1) return { x: outsHere[0].x, y: outsHere[0].y, perimeter: false };
+    } else if (!shared) {
+      var inHere = here.filter(function (pn) { return pn.dir === 'in' && !(pinUse[id] && pinUse[id][pn.name]); });
+      if (inHere.length) { (pinUse[id] = pinUse[id] || {})[inHere[0].name] = true; return { x: inHere[0].x, y: inHere[0].y, perimeter: false }; }
+    }
+    var tries = [frac, 0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85];
+    for (var k = 0; k < tries.length; k++) { var f0 = tries[k]; if (!here.some(function (pn) { return Math.abs(pn.y - f0) < 0.06; })) return [sx, f0]; }
+    return [sx, frac];
+  };
+  /* The wires between the columns. A wire to the next column leaves its block on the right and enters the next on the
      left, across the empty gap (left to itself the router takes the top or bottom of a wide block and runs down through
-     the column). A block feeding several blocks of the next stage runs one trunk just outside its own frame, a block fed
-     by several runs one just outside the frame of the next stage, so each wire keeps a long piece of its own for its
-     label. Wires back or over a stage run down into the corridor under the columns, along it and up again; the run
+     the column). A block feeding several blocks of the next column runs one trunk just outside its own column, a block
+     fed by several runs one just outside the next column, so each wire keeps a long piece of its own for its label.
+     Wires back, or over a whole stage, run down into the corridor under the columns, along it and up again; the run
      spanning fewer columns takes the row nearest the columns, so the runs nest instead of crossing. */
-  var colOf = function (id) { return stageOf[id] ? col[stageOf[id]] : sat[id] ? col[sat[id].stage] : null; };
-  var fwdList = [], runs = [];
+  var colOf = function (id) { return colOfBlock[id] !== undefined ? colOfBlock[id] : sat[id] ? stageCols[sat[id].stage][0] : null; };
+  var fwdList = [], runs = [], across = [];
   edges.forEach(function (e) {
     var a = str(e.from), b = str(e.to), ca = colOf(a), cb = colOf(b);
-    if (asPinsOf(byId[a]).length || asPinsOf(byId[b]).length || ca === null || cb === null || sat[a] || sat[b] || ca === cb) return;
+    if (ca === null || cb === null || sat[a] || sat[b] || ca === cb) return;
     if (cb === ca + 1) fwdList.push({ e: e, a: a, b: b, ca: ca });
+    else if (cb > ca && stageIdx[cols[cb].stage] - stageIdx[cols[ca].stage] <= 1) across.push(e);
     else runs.push({ e: e, a: a, b: b, ca: ca, cb: cb, span: Math.abs(cb - ca) });
+  });
+  across.forEach(function (e) {
+    if (!e.fromAnchor) e.fromAnchor = anchorAt(str(e.from), 'E', 0.5, true);
+    if (!e.toAnchor) e.toAnchor = anchorAt(str(e.to), 'W', 0.5, false);
   });
   var outs = {}, ins = {}, pairN = {};
   fwdList.forEach(function (w) {
@@ -2458,46 +2553,86 @@ function hierArrangeStages(d) {
     (ins[w.b] = ins[w.b] || {})[w.a] = 1;
     w.k = pairN[w.a + '\u0001' + w.b] = (pairN[w.a + '\u0001' + w.b] || 0) + 1;
   });
-  var laneR = order.map(function () { return 0; }), laneL = order.map(function () { return 0; }), trunk = {};
+  var laneR = cols.map(function () { return 0; }), laneL = cols.map(function () { return 0; }), trunk = {};
   fwdList.forEach(function (w) {
     var no = Object.keys(outs[w.a]).length, ni = Object.keys(ins[w.b]).length, n = pairN[w.a + '\u0001' + w.b];
     var f = n > 1 ? Math.round(w.k / (n + 1) * 1000) / 1000 : 0.5;
-    w.e.fromAnchor = [1, f];
-    w.e.toAnchor = [0, f];
+    if (!w.e.fromAnchor) w.e.fromAnchor = anchorAt(w.a, 'E', f, true);
+    if (!w.e.toAnchor) w.e.toAnchor = anchorAt(w.b, 'W', f, false);
     w.trunk = no > 1 && ni === 1 ? 'out:' + w.a : ni > 1 && no === 1 ? 'in:' + w.b : null;
     if (w.trunk && trunk[w.trunk] === undefined) trunk[w.trunk] = w.trunk.charAt(0) === 'o' ? laneR[w.ca]++ : laneL[w.ca + 1]++;
   });
-  runs.sort(function (p, q) { return p.span - q.span || p.ca - q.ca || p.cb - q.cb; });
-  runs.forEach(function (r, k) { r.row = k; r.laneA = laneR[r.ca]++; r.laneB = laneL[r.cb]++; });
-  /* each gap wide enough for the longest label crossing it next to the lanes it holds */
+  /* runs into the same block are one bundle: one row of the corridor and one lane up to the block; those from the same
+     column share the lane down too (the writeback of several units drawn as one bus) */
+  var bundleOf = {};
+  runs.forEach(function (r) { (bundleOf[r.b] = bundleOf[r.b] || []).push(r); });
+  var bundles = Object.keys(bundleOf).map(function (b) {
+    var l = bundleOf[b];
+    return { b: b, runs: l, cb: l[0].cb, ca: Math.min.apply(null, l.map(function (r) { return r.ca; })), span: Math.max.apply(null, l.map(function (r) { return r.span; })) };
+  });
+  bundles.sort(function (p, q) { return p.span - q.span || p.ca - q.ca || p.cb - q.cb; });
+  var downLane = {};
+  bundles.forEach(function (bu, k) {
+    var up = laneL[bu.cb]++;
+    bu.row = k;
+    bu.runs.forEach(function (r) {
+      r.row = k; r.laneB = up;
+      var key = bu.b + '|' + r.ca;
+      if (downLane[key] === undefined) downLane[key] = laneR[r.ca]++;
+      r.laneA = downLane[key];
+    });
+  });
+  /* each gap wide enough for the longest label crossing it next to the lanes it holds (narrower inside a stage) */
   var labelW = {};
   if (typeof normalizeDiagram === 'function' && typeof measureLabel === 'function') {
     var keepP = problems.length, keepL = problemList.length;
     try { normalizeDiagram(d, 0).edges.forEach(function (ne) { labelW[ne.rawIndex] = measureLabel(ne).w || 0; }); } catch (err) { labelW = {}; }
     problems.length = keepP; problemList.length = keepL;
   }
-  var gapW = order.slice(0, -1).map(function (s0, g) {
+  var gapW = cols.slice(0, -1).map(function (c, g) {
     var mw = 0;
     fwdList.forEach(function (w) { if (w.ca === g) mw = Math.max(mw, labelW[d.edges.indexOf(w.e)] || 0); });
-    return Math.min(440, Math.max(HS.colGap, mw + 64 + 10 * (laneR[g] + laneL[g + 1])));
+    return Math.min(440, Math.max(last(g) ? HS.colGap : 120, mw + (last(g) ? 64 : 40) + 10 * (laneR[g] + laneL[g + 1])));
+  });
+  /* a stage at least as wide as its caches side by side and as its title */
+  var satW = function (s0, above) {
+    var ids = Object.keys(sat).filter(function (id) { return sat[id].stage === s0 && sat[id].above === above; });
+    return ids.reduce(function (t, id) { return t + full(id).w; }, 0) + 30 * Math.max(0, ids.length - 1);
+  };
+  order.forEach(function (s0) {
+    var l = stageCols[s0], span = 0;
+    l.forEach(function (c, k) { span += colW[c] + (k < l.length - 1 ? gapW[c] : 0); });
+    var g0 = groups[s0], chip = g0 && typeof chipWidth === 'function' ? chipWidth({ icon: g0.icon, label: str(asText(g0.label)) }) - 26 : 0;
+    var need = Math.max(satW(s0, true), satW(s0, false), chip);
+    if (need > span) colW[l[l.length - 1]] += Math.ceil(need - span);
   });
   var aboveH = 0, bandN = 0;
   Object.keys(sat).forEach(function (id) {
     if (!sat[id].above) return;
-    aboveH = Math.max(aboveH, size[id].h);
+    aboveH = Math.max(aboveH, full(id).h);
     bandN = Math.max(bandN, edges.filter(function (e) { return (str(e.from) === id || str(e.to) === id) && str(asText(e.label)); }).length);
   });
   /* the band between the caches above and the columns holds the labels of their wires, one above the other */
   var band = Math.max(HS.band, 50 + 30 * bandN);
-  var top = HS.top + (aboveH ? aboveH + band : 0), x = HS.left + 10 * laneL[0], colX = [], colBottom = top;
-  order.forEach(function (s0, i) {
+  var top = HS.top + (aboveH ? aboveH + band : 0), x = HS.left + 10 * laneL[0], colX = [], colBottom = top, mid = {};
+  cols.forEach(function (c, i) {
     colX.push(x);
     var y = top;
-    stack[s0].forEach(function (m) {
-      var n = byId[m];
-      n.x = Math.round((x + (colW[i] - size[m].w) / 2) / 10) * 10;
-      n.y = Math.round(y / 10) * 10;
-      y += size[m].h + HS.gapY;
+    c.members.forEach(function (m) {
+      var n = byId[m], z = size[m], want = y;
+      /* in a later sub-column a block stands level with the blocks feeding it (the TLB next to the load/store unit),
+         which leaves the rest of the sub-column free for the wires crossing it */
+      if (!first(i)) {
+        var feeds = edges.filter(function (e) {
+          var a = str(e.from);
+          return str(e.to) === m && !back(e) && mid[a] !== undefined && colOfBlock[a] < i && cols[colOfBlock[a]].stage === c.stage;
+        }).map(function (e) { return mid[str(e.from)]; }).sort(function (p, q) { return p - q; });
+        if (feeds.length) want = Math.max(y, feeds[Math.floor((feeds.length - 1) / 2)] - z.h / 2 - (z.top || 0));
+      }
+      n.x = Math.round((x + (colW[i] - z.w) / 2) / 10) * 10;
+      n.y = Math.round((want + (z.top || 0)) / 10) * 10;
+      mid[m] = n.y + z.h / 2;
+      y = n.y - (z.top || 0) + full(m).h + HS.gapY;
     });
     colBottom = Math.max(colBottom, y - HS.gapY);
     x += colW[i] + (gapW[i] || 0);
@@ -2505,56 +2640,77 @@ function hierArrangeStages(d) {
   d.layout = 'manual';
   d.route = 'orthogonal';
   d.arranged = 'stages';
-  /* the frames the renderer draws round each stage: the lanes run just outside them */
-  var lay0 = hierLayoutNow(d), frameL = [], frameR = [], frameB = colBottom;
-  order.forEach(function (s0, i) {
-    var b = lay0 && lay0.L.groups[s0];
-    frameL.push(b ? b.x : colX[i] - 20);
-    frameR.push(b ? b.x + b.w : colX[i] + colW[i] + 20);
+  /* the frames the renderer draws round each stage: lanes run just outside them, or next to the sub-column inside one */
+  var lay0 = hierLayoutNow(d), edgeL = [], edgeR = [], frameB = colBottom;
+  cols.forEach(function (c, i) {
+    var b = lay0 && lay0.L.groups[c.stage];
+    edgeL.push(first(i) ? (b ? b.x : colX[i] - 20) : colX[i]);
+    edgeR.push(last(i) ? (b ? b.x + b.w : colX[i] + colW[i] + 20) : colX[i] + colW[i]);
     if (b) frameB = Math.max(frameB, b.y + b.h);
   });
-  var laneX = function (key, c) { return key.charAt(0) === 'o' ? frameR[c] + 16 + trunk[key] * 10 : frameL[c + 1] - 16 - trunk[key] * 10; };
+  var laneX = function (key, c) { return key.charAt(0) === 'o' ? edgeR[c] + 16 + trunk[key] * 10 : edgeL[c + 1] - 16 - trunk[key] * 10; };
   fwdList.forEach(function (w) {
     if (!w.trunk) return;
-    var A = byId[w.a], B = byId[w.b], ys = Math.round(+A.y + size[w.a].h * w.e.fromAnchor[1]), yt = Math.round(+B.y + size[w.b].h * w.e.toAnchor[1]);
+    var A = byId[w.a], B = byId[w.b], ys = Math.round(+A.y + size[w.a].h * yOf(w.e.fromAnchor)), yt = Math.round(+B.y + size[w.b].h * yOf(w.e.toAnchor));
     if (ys !== yt) { var xt = Math.round(laneX(w.trunk, w.ca)); w.e.points = [[xt, ys], [xt, yt]]; }
   });
-  var corridorTop = frameB + 20, corridorH = Math.max(HS.band, 20 + runs.length * 10 + 26);
+  var corridorTop = frameB + 20, corridorH = Math.max(HS.band, 20 + bundles.length * 10 + 26);
   /* where a run leaves and enters its blocks: the middle of the side when no other wire uses it, lower down otherwise;
      the deeper run higher up, so it does not cross the others at the block */
   var busy = {};
   fwdList.forEach(function (w) { busy[w.a + '|E'] = 1; busy[w.b + '|W'] = 1; });
+  across.forEach(function (e) { busy[str(e.from) + '|E'] = 1; busy[str(e.to) + '|W'] = 1; });
   var slotN = {};
   var slot = function (id, side) {
     var k = slotN[id + '|' + side] = (slotN[id + '|' + side] || 0) + 1;
     var list = busy[id + '|' + side] ? [0.7, 0.8, 0.9, 0.3, 0.2] : [0.5, 0.66, 0.8, 0.34, 0.2];
     return list[Math.min(k - 1, list.length - 1)];
   };
-  runs.slice().sort(function (p, q) { return q.row - p.row; }).forEach(function (r) {
-    var fs = slot(r.a, 'E'), ft = slot(r.b, 'W'), A = byId[r.a], B = byId[r.b];
-    var ys = Math.round(+A.y + size[r.a].h * fs), yt = Math.round(+B.y + size[r.b].h * ft), yc = corridorTop + r.row * 10;
-    var xa = Math.round(frameR[r.ca] + 16 + r.laneA * 10), xb = Math.round(frameL[r.cb] - 16 - r.laneB * 10);
-    r.e.fromAnchor = [1, fs];
-    r.e.toAnchor = [0, ft];
-    r.e.points = [[xa, ys], [xa, yc], [xb, yc], [xb, yt]];
+  /* a bundle whose wires all carry the same words shows them once, in the middle of the row they share */
+  var labelKept = [];
+  var xOf = function (a) { return Array.isArray(a) ? +a[0] : +a.x; };
+  bundles.slice().sort(function (p, q) { return q.row - p.row; }).forEach(function (bu) {
+    var ft = slot(bu.b, 'W'), B = byId[bu.b], many = bu.runs.length > 1, toA = null;
+    bu.runs.forEach(function (r) {
+      var fs = slot(r.a, 'E'), A = byId[r.a];
+      if (!r.e.fromAnchor) r.e.fromAnchor = anchorAt(r.a, 'E', fs, true);
+      if (!r.e.toAnchor) r.e.toAnchor = toA || (toA = anchorAt(bu.b, 'W', ft, false, many));
+      var ys = Math.round(+A.y + size[r.a].h * yOf(r.e.fromAnchor)), yt = Math.round(+B.y + size[bu.b].h * yOf(r.e.toAnchor)), yc = corridorTop + r.row * 10;
+      r.xa = Math.round(edgeR[r.ca] + 16 + r.laneA * 10);
+      r.xb = Math.round(edgeL[r.cb] - 16 - r.laneB * 10);
+      r.e.points = [[r.xa, ys], [r.xa, yc], [r.xb, yc], [r.xb, yt]];
+      r.sx = +A.x + size[r.a].w * xOf(r.e.fromAnchor); r.ys = ys; r.yc = yc; r.yt = yt; r.tx = +B.x + size[bu.b].w * xOf(r.e.toAnchor);
+    });
+    /* the labels of a bundle sit on the row it shares, spread along it; the same words land on the same spot */
+    if (!many) return;
+    var texts = [], minXa = Math.min.apply(null, bu.runs.map(function (r) { return r.xa; }));
+    bu.runs.forEach(function (r) { var w = str(asText(r.e.label)); if (w && texts.indexOf(w) < 0) texts.push(w); });
+    bu.runs.forEach(function (r) {
+      var w = str(asText(r.e.label));
+      if (!w) return;
+      var X = r.xb + (minXa - r.xb) * (texts.indexOf(w) + 1) / (texts.length + 1);
+      var total = (r.xa - r.sx) + Math.abs(r.yc - r.ys) + (r.xa - r.xb) + Math.abs(r.yc - r.yt) + Math.abs(r.tx - r.xb), at0 = (r.xa - r.sx) + Math.abs(r.yc - r.ys) + (r.xa - X);
+      if (total > 0) { r.e.labelAt = Math.round((2 * at0 / total - 1) * 1000) / 1000; labelKept.push(r.e); }
+    });
   });
-  /* the satellites of a stage, side by side above or below its column */
+  /* the satellites of a stage, side by side above or below it */
   var belowTop = corridorTop + corridorH;
-  order.forEach(function (s0, i) {
+  order.forEach(function (s0) {
+    var l = stageCols[s0], sx0 = colX[l[0]], span = colX[l[l.length - 1]] + colW[l[l.length - 1]] - sx0;
     ['above', 'below'].forEach(function (side) {
       var ids = Object.keys(sat).filter(function (id) { return sat[id].stage === s0 && sat[id].above === (side === 'above'); });
-      var total = ids.reduce(function (t, id) { return t + size[id].w; }, 0) + 30 * Math.max(0, ids.length - 1), sx = colX[i] + (colW[i] - total) / 2;
+      var sx = sx0 + (span - satW(s0, side === 'above')) / 2;
       ids.forEach(function (id) {
-        var n = byId[id];
-        n.x = Math.round(sx / 10) * 10;
-        n.y = Math.round((side === 'above' ? HS.top + aboveH - size[id].h : belowTop) / 10) * 10;
-        sx += size[id].w + 30;
+        var n = byId[id], z = size[id];
+        n.x = Math.round((sx + (z.left || 0)) / 10) * 10;
+        n.y = Math.round((side === 'above' ? HS.top + aboveH - z.h - (z.bottom || 0) : belowTop + (z.top || 0)) / 10) * 10;
+        sx += full(id).w + 30;
       });
     });
   });
   hierSplitPairs(d);
   hierUnblock(d);
-  hierPlaceLabels(d);
+  hierPlaceLabels(d, labelKept);
   return null;
 }
 
