@@ -274,7 +274,10 @@ class InBrowser(unittest.TestCase):
         steps = [s for s in assist.suggest(spec)["nextSteps"] if s["label"].startswith("Frame")]
         self.assertEqual([s["label"] for s in steps], ["Frame the 3 blocks clocked by clk_a as one clock domain", "Frame the 3 blocks clocked by clk_b as one clock domain"])
         framed = assist.apply_ops(spec, steps[0]["ops"])
-        self.assertEqual(framed["checks"], [])
+        # this drawing runs the clock to the second and third flop under the first one: that is advice with its fix
+        under = [c for c in framed["checks"] if c.get("soft") and (c.get("fixes") or [{}])[0].get("ops") == [{"op": "routeAround"}]]
+        self.assertEqual([c for c in framed["checks"] if c not in under], [])
+        self.assertTrue(under)
         self.assertEqual({n["id"] for n in framed["spec"]["diagrams"][0]["nodes"] if n.get("group")}, {"ca", "a0", "a1", "a2"})
 
 
@@ -530,4 +533,88 @@ class ArrangeChip(unittest.TestCase):
         with self.assertRaises(assist.AssistError) as caught:
             assist.apply_ops(spec, [{"op": "arrange", "style": "bus"}], diagram="f")
         self.assertIn("bus", str(caught.exception))
+
+
+class ArrangeStages(unittest.TestCase):
+    """The pipeline arrangement and the wire-under-block check (found when a newcomer asked the page's AI for the CVA6 core:
+    the automatic layout ran wires through blocks, caches covered the columns and notes covered blocks, 25/09/2026)."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not find_browser():
+            raise unittest.SkipTest("needs Chrome, Chromium, Edge or Brave")
+
+    @staticmethod
+    def core():
+        def g(i, t, grp):
+            return {"id": i, "title": t, "group": grp}
+
+        def e(a, b, label=None, kind=None):
+            return {k: v for k, v in (("from", a), ("to", b), ("label", label), ("kind", kind)) if v}
+        nodes = [g("pc", "PC generation", "fe"), g("fetch", "Instruction fetch", "fe"), g("bp", "Branch predictor", "fe"),
+                 g("dec", "Decoder", "de"), g("sb", "Scoreboard", "is"), g("rf", "Register file", "is"), g("iq", "Issue queue", "is"),
+                 g("alu", "ALU", "ex"), g("mul", "Multiplier", "ex"), g("lsu", "Load/store unit", "ex"), g("cm", "Commit", "co"),
+                 {"id": "ic", "title": "I-cache", "shape": "ram"}, {"id": "dc", "title": "D-cache", "shape": "ram"}]
+        edges = [e("pc", "ic", "fetch address"), e("ic", "fetch", "instructions"), e("fetch", "bp"), e("bp", "pc", "predicted PC"),
+                 e("fetch", "dec", "raw instruction"), e("dec", "sb", "micro-op"), e("sb", "iq", "tracked"), e("rf", "iq", "operands")]
+        edges += [e("iq", u, "dispatch") for u in ("alu", "mul", "lsu")]
+        edges += [e(u, "cm", "result") for u in ("alu", "mul", "lsu")]
+        edges += [e("lsu", "dc", "address"), e("dc", "lsu", "load data"), e("cm", "rf", "writeback", "feedback"), e("cm", "pc", "redirect", "feedback")]
+        notes = [{"id": "n1", "text": "Single issue, several units execute in parallel.", "attach": "ex", "dx": 5, "dy": 5},
+                 {"id": "n2", "text": "Loads wait for the D-cache.", "attach": "lsu"}]
+        return {"title": "t", "diagrams": [{"id": "core", "title": "Core", "nodes": nodes, "edges": edges, "notes": notes,
+                "groups": [{"id": x, "label": x.upper()} for x in ("fe", "de", "is", "ex", "co")]}]}
+
+    def test_stages_become_columns_with_no_wire_under_a_block(self):
+        steps = assist.suggest(self.core())["nextSteps"]
+        arrange = [s for s in steps if (s.get("ops") or [{}])[0].get("op") == "arrange"]
+        self.assertTrue(arrange and arrange[0]["ops"][0]["style"] == "stages", steps)
+        out = assist.apply_ops(self.core(), arrange[0]["ops"], diagram="core")
+        d = out["spec"]["diagrams"][0]
+        n = {x["id"]: x for x in d["nodes"]}
+        self.assertEqual((d["layout"], d["route"], d["arranged"]), ("manual", "orthogonal", "stages"))
+        left = {grp: min(x["x"] for x in d["nodes"] if x.get("group") == grp) for grp in ("fe", "de", "is", "ex", "co")}
+        self.assertEqual(sorted(left, key=left.get), ["fe", "de", "is", "ex", "co"])
+        # a stage is stacked the way its wires run, through its cache: PC, fetch, then the predictor
+        self.assertLess(n["pc"]["y"], n["fetch"]["y"])
+        self.assertLess(n["fetch"]["y"], n["bp"]["y"])
+        # the caches sit above the stage they feed; the unit wired to the D-cache is on top of its column
+        self.assertLess(n["ic"]["y"], n["pc"]["y"])
+        self.assertLess(n["dc"]["y"], n["lsu"]["y"])
+        self.assertLess(n["lsu"]["y"], min(n["alu"]["y"], n["mul"]["y"]))
+        self.assertTrue(left["fe"] <= n["ic"]["x"] < left["de"], (n["ic"], left))
+        # wires to the next stage leave on the right and enter on the left; wires back run under all the blocks
+        for x in d["edges"]:
+            if (x["from"], x["to"]) in (("dec", "sb"), ("iq", "alu"), ("mul", "cm")):
+                self.assertEqual((x["fromAnchor"][0], x["toAnchor"][0]), (1, 0), x)
+            if x.get("kind") == "feedback":
+                self.assertGreater(max(p[1] for p in x["points"]), max(v["y"] for v in d["nodes"] if v.get("group")), x)
+        self.assertFalse([c for c in out["checks"] if "under" in c["text"]], out["checks"])
+        # notes are placed again, and the group boxes follow their blocks
+        self.assertFalse([q for q in d["notes"] if "dx" in q or "x" in q], d["notes"])
+        self.assertFalse([gr for gr in d["groups"] if "x" in gr], d["groups"])
+        again = assist.apply_ops(out["spec"], [{"op": "arrange", "style": "stages"}], diagram="core")
+        self.assertEqual([(x["x"], x["y"]) for x in again["spec"]["diagrams"][0]["nodes"]], [(x["x"], x["y"]) for x in d["nodes"]])
+
+    def test_stages_need_two_groups(self):
+        spec = {"title": "t", "diagrams": [{"id": "f", "title": "Flow", "nodes": [{"id": "a"}, {"id": "b"}], "edges": [{"from": "a", "to": "b"}]}]}
+        with self.assertRaises(assist.AssistError) as caught:
+            assist.apply_ops(spec, [{"op": "arrange", "style": "stages"}], diagram="f")
+        self.assertIn("group", str(caught.exception))
+
+    def test_a_wire_under_a_block_is_flagged_and_routed_round(self):
+        nodes = [{"id": "a", "title": "Source", "x": 100, "y": 60}, {"id": "b", "title": "In the way", "x": 100, "y": 200},
+                 {"id": "c", "title": "Sink", "x": 100, "y": 340}]
+        spec = {"title": "t", "diagrams": [{"id": "m", "title": "Hand placed", "layout": "manual", "route": "orthogonal", "nodes": nodes,
+                "edges": [{"from": "a", "to": "b"}, {"from": "b", "to": "c"}, {"from": "a", "to": "c", "label": "bypass"}]}]}
+        checks = assist.apply_ops(spec, [], diagram="m")["checks"]
+        under = [c for c in checks if "under" in c["text"]]
+        self.assertEqual(len(under), 1, checks)
+        self.assertTrue(under[0]["soft"])
+        self.assertIn("In the way", under[0]["text"])
+        self.assertEqual(under[0]["fixes"][0]["ops"], [{"op": "routeAround"}])
+        out = assist.apply_ops(spec, under[0]["fixes"][0]["ops"], diagram="m")
+        bypass = [x for x in out["spec"]["diagrams"][0]["edges"] if x["from"] == "a" and x["to"] == "c"][0]
+        self.assertTrue(bypass.get("points") and bypass.get("fromAnchor") and bypass.get("toAnchor"), bypass)
+        self.assertFalse([c for c in out["checks"] if "under" in c["text"]], out["checks"])
 

@@ -78,7 +78,7 @@ Engineers draw an overview first, then each block in detail. Keep the levels lin
 
 ## Arranging a chip overview
 
-An SoC overview with a crossbar and many blocks is hard to read in the automatic layout (every wire fans out from one box). The `arrange` operation (`{"op": "arrange", "style": "bus"}`, also offered as a next step and used by the AI in the page) draws it the way chip block diagrams are drawn by hand: each bus or crossbar a long bar, groups kept together in rows above and below it, hosts on top, straight wires to the bars and the other wires along the corridors between rows. Mark bus wires with `"kind": "bus"`.
+An SoC overview with a crossbar and many blocks is hard to read in the automatic layout (every wire fans out from one box). The `arrange` operation (`{"op": "arrange", "style": "bus"}`, also offered as a next step and used by the AI in the page) draws it the way chip block diagrams are drawn by hand: each bus or crossbar a long bar, groups kept together in rows above and below it, hosts on top, straight wires to the bars and the other wires along the corridors between rows. Mark bus wires with `"kind": "bus"`. A pipeline (a CPU core, a DSP or video chain, a packet path) uses `{"op": "arrange", "style": "stages"}` instead: put the blocks of each stage in one top-level group and mark wires that go back with `"kind": "feedback"`; each group becomes a column, left to right in the order the signal runs, caches sit above or below their stage, feedback wires run in a corridor under the columns, and no wire passes under a block.
 
 ## Sticky notes
 

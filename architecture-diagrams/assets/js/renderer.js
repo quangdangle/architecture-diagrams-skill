@@ -798,19 +798,56 @@ function noteTarget(d, res, att) {
   var m = isFinite(e.lx) ? { x: e.lx, y: e.ly } : e.points[Math.floor(e.points.length / 2)];
   return { x: m.x, y: m.y, w: 0, h: 0 };
 }
+/* Does the segment a-b pass through box r (Liang-Barsky clipping)? */
+function segHitsBox(a, b, r) {
+  var t0 = 0, t1 = 1, dx = b.x - a.x, dy = b.y - a.y;
+  var p = [-dx, dx, -dy, dy], q = [a.x - r.x, r.x + r.w - a.x, a.y - r.y, r.y + r.h - a.y];
+  for (var i = 0; i < 4; i++) {
+    if (!p[i]) { if (q[i] < 0) return false; continue; }
+    var t = q[i] / p[i];
+    if (p[i] < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return true;
+}
 function layoutNotes(d, res, always) {
   if (!d.notes || !d.notes.length || (!always && !notesShown())) return [];
   var x2 = -Infinity, y1 = Infinity;
   Object.keys(res.nodes).forEach(function (id) { var p = res.nodes[id]; x2 = Math.max(x2, p.x + p.w / 2); y1 = Math.min(y1, p.y - p.h / 2); });
   Object.keys(res.groups || {}).forEach(function (id) { var b = res.groups[id]; x2 = Math.max(x2, b.x + b.w); y1 = Math.min(y1, b.y); });
+  (res.edges || []).forEach(function (r) { (r.points || []).forEach(function (pt) { x2 = Math.max(x2, pt.x); }); });
   if (x2 === -Infinity) { x2 = 0; y1 = 0; }
   var colY = y1, placed = [];
-  /* things a note placed by default should not cover: blocks, the frames of a detail board, other notes */
-  var solid = [];
+  /* things a note placed by default should not cover: blocks, frames of a detail board, group titles, wires and their
+     labels, other notes; a note sits wholly inside a group frame (one that holds what it is about) or wholly outside */
+  var solid = [], frames = [], segs = [];
   Object.keys(res.nodes).forEach(function (id) { var p = res.nodes[id]; solid.push({ id: id, x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h }); });
-  d.groups.forEach(function (g) { var b = (res.groups || {})[g.id]; if (b && g.source) solid.push({ id: g.id, x: b.x, y: b.y, w: b.w, h: b.h }); });
-  var hits = function (b, skip) {
-    return solid.concat(placed).some(function (q) { return q.id !== skip && b.x < q.x + q.w + 6 && b.x + b.w + 6 > q.x && b.y < q.y + q.h + 6 && b.y + b.h + 6 > q.y; });
+  d.groups.forEach(function (g) {
+    var b = (res.groups || {})[g.id];
+    if (!b || g.hidden) return;
+    if (g.source) { solid.push({ id: g.id, x: b.x, y: b.y, w: b.w, h: b.h }); return; }
+    frames.push({ id: g.id, x: b.x, y: b.y, w: b.w, h: b.h });
+    if (!g.drawio) solid.push({ id: g.id + ':chip', x: b.x, y: b.y - 12, w: chipWidth(g) + 14, h: 24 });
+  });
+  (res.edges || []).forEach(function (r, i) {
+    var lm = res.labelM && res.labelM[i], pts = r.points || [];
+    if (lm && lm.w && isFinite(r.lx)) solid.push({ id: 'label:' + i, x: r.lx - lm.w / 2, y: r.ly - lm.h / 2, w: lm.w, h: lm.h });
+    for (var k = 1; k < pts.length; k++) segs.push([pts[k - 1], pts[k]]);
+  });
+  var holds = function (gid, att) {
+    var g = att.type === 'group' ? d.groupById[att.id] : att.type === 'node' && d.nodeById[att.id] ? d.groupById[d.nodeById[att.id].group] : null;
+    for (var k = 0; g && k < 40; k++) { if (g.id === gid) return true; g = g.parent ? d.groupById[g.parent] : null; }
+    return false;
+  };
+  var hits = function (b, skip, att) {
+    if (solid.concat(placed).some(function (q) { return q.id !== skip && b.x < q.x + q.w + 6 && b.x + b.w + 6 > q.x && b.y < q.y + q.h + 6 && b.y + b.h + 6 > q.y; })) return true;
+    var grown = { x: b.x - 4, y: b.y - 4, w: b.w + 8, h: b.h + 8 };
+    if (segs.some(function (sg) { return segHitsBox(sg[0], sg[1], grown); })) return true;
+    return frames.some(function (f) {
+      if (!(b.x < f.x + f.w + 4 && b.x + b.w + 4 > f.x && b.y < f.y + f.h + 4 && b.y + b.h + 4 > f.y)) return false;
+      var inside = b.x >= f.x + 8 && b.y >= f.y + 8 && b.x + b.w <= f.x + f.w - 8 && b.y + b.h <= f.y + f.h - 8;
+      return !(inside && holds(f.id, att));
+    });
   };
   return d.notes.map(function (q) {
     var lines = wrapText(q.text, q.w - NOTE_PAD * 2, NOTE_FS, 400, 14).lines;
@@ -819,10 +856,25 @@ function layoutNotes(d, res, always) {
     if (el) {
       x = el.x + el.w + (q.dx !== null ? q.dx : 18); y = el.y + (q.dy !== null ? q.dy : -4);
       if (q.dx === null && q.dy === null) {
-        /* no place chosen yet: right of it, else left, below, above, inside its top-right corner */
-        var skip = q.attach.type === 'edge' ? null : q.attach.id;
-        var tries = [[el.x + el.w + 18, el.y - 4], [el.x - q.w - 18, el.y - 4], [el.x, el.y + el.h + 14], [el.x, el.y - h - 14], [el.x + el.w - q.w - 12, el.y + 34]];
-        for (var k = 0; k < tries.length; k++) { if (!hits({ x: tries[k][0], y: tries[k][1], w: q.w, h: h }, skip)) { x = tries[k][0]; y = tries[k][1]; break; } }
+        /* no place chosen yet: the nearest free spot around it, rings further out each time, right of it first;
+           a note on a wire starts from the wire's label */
+        var skip = q.attach.type === 'edge' ? null : q.attach.id, sb = el, lm = q.attach.type === 'edge' && res.labelM ? res.labelM[q.attach.index] : null;
+        if (lm && lm.w) { sb = { x: el.x - lm.w / 2, y: el.y - lm.h / 2, w: lm.w, h: lm.h }; el.lbox = sb; skip = 'label:' + q.attach.index; }
+        var found = false;
+        [18, 40, 70, 110, 160, 230, 320].some(function (g) {
+          return [0, 1, -1, 2, -2, 3].some(function (k) {
+            var sy = k * Math.max(30, h / 2), sx = k * Math.max(40, q.w / 2);
+            var tries = [[sb.x + sb.w + g, sb.y - 4 + sy], [sb.x - q.w - g, sb.y - 4 + sy]];
+            if (Math.abs(k) <= 2) tries.push([sb.x + sx, sb.y + sb.h + g - 4], [sb.x + sx, sb.y - h - g]);
+            return tries.some(function (t0) {
+              if (hits({ x: t0[0], y: t0[1], w: q.w, h: h }, skip, q.attach)) return false;
+              x = t0[0]; y = t0[1]; found = true;
+              return true;
+            });
+          });
+        });
+        /* nowhere free near it: in the column right of the drawing, with its leader line */
+        if (!found) { x = x2 + 44; y = colY; colY += h + 14; }
       }
     }
     else if (q.x !== null && q.y !== null) { x = q.x; y = q.y; }
@@ -1280,12 +1332,15 @@ function orthRoute(src, tgt, p0, pe) {
   var S1 = { x: S0.x + vec[ds][0] * stub, y: S0.y + vec[ds][1] * stub }, T1 = { x: T0.x + vec[dt][0] * stub, y: T0.y + vec[dt][1] * stub };
   var ahead = function (from, side, to) { return side === 'E' ? to.x > from.x : side === 'W' ? to.x < from.x : side === 'S' ? to.y > from.y : to.y < from.y; };
   if (hs && ht) {
+    /* ends level to within a pixel: one straight line, not a hair-thin jog */
+    if (ahead(S0, ds, T0) && ahead(T0, dt, S0) && ds !== dt && Math.abs(S0.y - T0.y) < 1.5) return [];
     if (ahead(S0, ds, T0) && ahead(T0, dt, S0) && ds !== dt) { var mx = (S0.x + T0.x) / 2; return [{ x: mx, y: S0.y }, { x: mx, y: T0.y }]; }
     if (ds === dt) { var ex = ds === 'E' ? Math.max(S1.x, T1.x) : Math.min(S1.x, T1.x); return [{ x: ex, y: S0.y }, { x: ex, y: T0.y }]; }
     var my = (S0.y + T0.y) / 2;
     return [{ x: S1.x, y: S0.y }, { x: S1.x, y: my }, { x: T1.x, y: my }, { x: T1.x, y: T0.y }];
   }
   if (!hs && !ht) {
+    if (ahead(S0, ds, T0) && ahead(T0, dt, S0) && ds !== dt && Math.abs(S0.x - T0.x) < 1.5) return [];
     if (ahead(S0, ds, T0) && ahead(T0, dt, S0) && ds !== dt) { var my2 = (S0.y + T0.y) / 2; return [{ x: S0.x, y: my2 }, { x: T0.x, y: my2 }]; }
     if (ds === dt) { var ey = ds === 'S' ? Math.max(S1.y, T1.y) : Math.min(S1.y, T1.y); return [{ x: S0.x, y: ey }, { x: T0.x, y: ey }]; }
     var mx2 = (S0.x + T0.x) / 2;
@@ -1794,8 +1849,9 @@ function drawNotes(L, T, refs, forExport, uid) {
   L.notes.forEach(function (b) {
     var q = b.q, w = b.w, h = b.h, tag = NOTE_TAGS[q.kind] || NOTE_TAGS.note;
     if (b.target) {
-      /* a thin dashed leader from the note to what it is about */
-      var tx = Math.min(Math.max(b.x, b.target.x), b.target.x + b.target.w), ty = Math.min(Math.max(b.y + 14, b.target.y), b.target.y + b.target.h);
+      /* a thin dashed leader from the note to what it is about (to the edge of a wire's label, not across it) */
+      var tb = b.target.lbox || b.target;
+      var tx = Math.min(Math.max(b.x, tb.x), tb.x + tb.w), ty = Math.min(Math.max(b.y + 14, tb.y), tb.y + tb.h);
       var sx = b.x <= tx ? b.x + w : b.x, sy = b.y + 14;
       if (Math.abs(sx - tx) + Math.abs(sy - ty) > 6) layer.appendChild(S('path', { class: 'note-leader', d: 'M' + fmt(sx) + ',' + fmt(sy) + ' L' + fmt(tx) + ',' + fmt(ty), fill: 'none', stroke: '#c9a227', 'stroke-width': 1, 'stroke-dasharray': '3 3' }));
     }

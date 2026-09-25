@@ -104,7 +104,9 @@ var AI_OPS_DOC = [
   '- addNote {note: {text, kind, attach}}: a sticky note; kind is note, constraint, reason, change, question, todo or legend; attach is a block or frame id or [from, to].',
   '- updateNote {id, set}, removeNote {id}. updateDiagram {set: {layout, route, direction, title, summary, tag, legend}}. A field an op does not know is an error.',
   '- tidyFrame {id}: lays out the blocks inside a frame in layers (signals left to right), lines its ports up with them and fits the frame. End with it after drawing the inside of a frame; then rough x, y are enough.',
-  '- arrange {style: "bus"}: lays the whole tab out as a chip block diagram: every bus or crossbar a long bar, each group of blocks kept together in a row above or below the bar it hangs on, hosts above, straight wires to the bars. Use it when asked to tidy or arrange a chip or SoC diagram, and after adding many blocks to one; it needs bus wires (kind "bus") to the bars. A tab already arranged ("arranged": "bus") is arranged again by the tool after any change that adds blocks or wires, so new blocks there need no x, y.'
+  '- arrange {style: "bus"}: lays the whole tab out as a chip block diagram: every bus or crossbar a long bar, each group of blocks kept together in a row above or below the bar it hangs on, hosts above, straight wires to the bars. Use it when asked to tidy or arrange a chip or SoC diagram, and after adding many blocks to one; it needs bus wires (kind "bus") to the bars. A tab already arranged ("arranged": "bus") is arranged again by the tool after any change that adds blocks or wires, so new blocks there need no x, y.',
+  '- routeAround {wires?}: in a hand-placed tab, gives every wire that runs under a block a path round the blocks (points, and anchors where the wire has none; pins stay). wires: [[from, to], ...] limits it to those wires, blocks: [id, ...] to the wires under those blocks. Use it when the checks say a wire runs under a block.',
+  '- arrange {style: "stages"}: lays the whole tab out as a pipeline: every top-level group is one stage (a column), the stages left to right in the order the signal runs through them, the blocks of a stage stacked in their own order; blocks in no group (caches, memories) sit above or below the stage they are wired to most; wires to the next stage go straight across, wires back (kind "feedback") or over a stage run in a corridor under the columns, and the rest go round the blocks in their way. Use it for a CPU pipeline, a DSP or video chain, a packet path: anything that flows through stages. Put the blocks of each stage in one group first. A tab arranged this way ("arranged": "stages") is arranged again by the tool after changes that add blocks, wires or groups.'
 ].join('\n');
 var AI_SCHEMA = { type: 'object', properties: {
   ops: { type: 'array', items: { type: 'object' } },
@@ -290,9 +292,11 @@ function aiRun(request, targets, box) {
 /* A frame that had nothing drawn inside and gets two or more blocks is laid out afterwards (models are poor at pixel
    sums), unless the answer already ends with tidyFrame for it. */
 function aiTidyOps(d, ops) {
-  /* a tab arranged around its buses is arranged again when the AI adds blocks or wires, so they get a place in the rows */
-  if (str(d.arranged) === 'bus' && !ops.some(function (o) { return o && o.op === 'arrange'; }) &&
-      ops.some(function (o) { return o && (o.op === 'addNode' || o.op === 'connect' || o.op === 'removeNode'); })) return [{ op: 'arrange', style: 'bus' }];
+  /* a tab arranged around its buses or as a pipeline is arranged again, the same way, when the AI adds blocks, wires or
+     stages, so they get a place in the rows or columns */
+  var style = str(d.arranged);
+  if ((style === 'bus' || style === 'stages') && !ops.some(function (o) { return o && o.op === 'arrange'; }) &&
+      ops.some(function (o) { return o && ['addNode', 'connect', 'removeNode', 'addGroup', 'removeGroup'].indexOf(o.op) >= 0; })) return [{ op: 'arrange', style: style }];
   var groups = asGroupIds(d), count = {}, asked = {};
   ops.forEach(function (o) {
     if (o && o.op === 'addNode' && o.node && str(o.node.group) && !o.node.port) count[str(o.node.group)] = (count[str(o.node.group)] || 0) + 1;

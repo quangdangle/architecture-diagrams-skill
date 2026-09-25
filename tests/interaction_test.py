@@ -1093,6 +1093,8 @@ NOTES_AI_JS = r"""
     ok('the request carries the whole design: the overview of the board and what the frame is there',
        /"design":/.test(asked[0].prompt) && /"overview":/.test(asked[0].prompt) && /"selectedInOverview":\[\{"frame":"uart"/.test(asked[0].prompt) && /context\.design/.test(asked[0].system));
     ok('the change is outlined before it is applied', svg().querySelectorAll('.ai-overlay rect').length >= 1);
+    var again = window.__adEditor.aiTidy({ arranged: 'stages', nodes: [], edges: [], groups: [] }, [{ op: 'addNode', node: { id: 'x' } }]);
+    ok('a tab arranged as a pipeline is arranged again, the same way, after the AI adds a block', JSON.stringify(again) === '[{"op":"arrange","style":"stages"}]', JSON.stringify(again));
     ok('nothing is applied before Apply', !window.__adEditor.raw().diagrams[window.__adEditor.tab()].nodes.some(function (n) { return n.id === 'u_fifo_rx'; }));
     pbar.querySelector('.ai-accept').click();
     await wait(900);

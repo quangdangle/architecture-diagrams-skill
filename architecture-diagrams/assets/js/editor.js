@@ -248,6 +248,7 @@ function openEditor(startRaw) {
   if (active) states.forEach(function (st, i) { if (st === active) ED.diag = Math.min(i, raw.diagrams.length - 1); });
   window.__adEditor = { raw: function () { return ED ? ED.raw : null; }, selected: function () { return ED ? ED.selected : null; },
                         tab: function () { return ED ? ED.diag : null; }, ops: function (ops, label) { return edRunOps(ops, label || 'ops'); },
+                        aiTidy: function (d, ops) { return typeof aiTidyOps === 'function' ? aiTidyOps(d, ops) : null; },
                         select: function (ids, frames) { if (!ED) return; ED.nsel = null; ED.gsel = frames && frames.length ? frames.slice() : null; if (ids && ids.length) edSetSelection(ids); else { ED.selected = null; ED.multi = null; edMarkSelection(); } } };
   document.body.classList.add('editing');
   var panel = H('aside', { class: 'ed-panel', 'aria-label': et('edit') });

@@ -25,6 +25,7 @@ var AST = {
     sgConsumer: 'Add a consumer', sgReplica: 'Add a read replica', sgNextFlop: 'Add the next flip-flop stage after {x}', sgSyncTo: 'Synchronize {x} into the {y} domain',
     sgShape: 'Draw it with the {x} symbol, which fits its name', sgIcon: 'Give it the {x} icon, which fits its name',
     sgLinkFrom: 'Connect {x} to it', sgHeal: 'Reconnect to {x}, as before the delete', sgHealFrom: 'Reconnect from {x}, as before the delete',
+    cUnder: 'The wire {x} → {y} runs under {z}', fRouteAround: 'Route the wires round the blocks',
     nsHeal: 'Reconnect {x} to {y}', healHint: 'Deleted. Press 1 to reconnect {x} to {y}.', nsTitle: 'Next steps', nsFor: '{x}: {y}',
     nsHint: 'Select a block to see all of its suggestions. Keys 1 to 8 apply the suggestion with that number.',
     sgNoneNext: 'Nothing more for {x}. Next steps in the diagram:', sgLoopBack: 'Send the “{x}” branch back to {y}', sgEnd: 'End the flow here',
@@ -79,6 +80,7 @@ var AST = {
     sgConsumer: 'Thêm dịch vụ nhận tin', sgReplica: 'Thêm bản sao chỉ đọc', sgNextFlop: 'Thêm tầng flip-flop tiếp theo sau {x}', sgSyncTo: 'Đồng bộ {x} sang miền {y}',
     sgShape: 'Vẽ khối này bằng ký hiệu {x} cho hợp với tên', sgIcon: 'Thêm biểu tượng {x} cho hợp với tên khối',
     sgLinkFrom: 'Nối {x} vào khối này', sgHeal: 'Nối lại tới {x} như trước khi xóa', sgHealFrom: 'Nối lại từ {x} như trước khi xóa',
+    cUnder: 'Dây {x} → {y} chạy bên dưới khối {z}', fRouteAround: 'Cho dây vòng quanh khối',
     nsHeal: 'Nối lại {x} tới {y}', healHint: 'Đã xóa. Bấm phím 1 để nối lại {x} tới {y}.', nsTitle: 'Bước tiếp theo', nsFor: '{x}: {y}',
     nsHint: 'Chọn một khối để xem mọi gợi ý cho khối đó. Bấm phím số 1 đến 8 để làm theo gợi ý mang số đó.',
     sgNoneNext: 'Khối {x} không còn gợi ý nào. Bước tiếp theo trong sơ đồ:', sgLoopBack: 'Cho nhánh “{x}” quay lại {y}', sgEnd: 'Kết thúc luồng ở đây',
@@ -983,6 +985,11 @@ function asPatternOps(raw, di, st, pid, near, center, clock) {
     var srcPin = asPinByName({ shape: 'clock' }, 'CLK'), from = cb ? asPinPoint(cb, srcPin) : null;
     c.pins.forEach(function (p) { wire(cid + '.CLK', mapEnd(p), 'clock', { points: placed ? bendsAt(from, p, c, origin, 34) : null }); });
   });
+  /* the pattern's bends are planned for the pattern alone: its wires then keep clear of the blocks around them, and
+     wires already there that its new blocks now sit on go round them */
+  var mine = ops.filter(function (o) { return o.op === 'connect'; }).map(function (o) { return [str(o.from), str(o.to)]; });
+  var added = ops.filter(function (o) { return o.op === 'addNode' && o.node; }).map(function (o) { return str(o.node.id); });
+  if (placed && (mine.length || added.length)) ops.push({ op: 'routeAround', wires: mine, blocks: added });
   return { ops: ops, select: select, notes: notes, pattern: pat };
 }
 
@@ -1697,6 +1704,21 @@ function asNextSteps(raw, di, st, memo) {
     var hub0 = Object.keys(busDeg).filter(function (k) { return nodes[k] && busDeg[k] >= 6; })[0];
     if (hub0) { out.push({ node: hub0, label: typeof ht === 'function' ? ht('nsArrange') : 'Arrange', ops: [{ op: 'arrange', style: 'bus' }] }); seen['arrange'] = true; }
   }
+  /* blocks grouped into three or more stages that the wires run through one after the other: the pipeline arrangement */
+  if (!seen['arrange'] && !asManual(d) && !str(d.boardOf) && !d.detailOf && (d.nodes || []).length >= 8 && typeof hierArrangeStages === 'function') {
+    var tops = (d.groups || []).filter(function (g) { return g && !str(g.parent); }).map(function (g) { return str(g.id); });
+    var gofs = asGroupIds(d), topOf = function (gid) { for (var k = 0; gid && gofs[gid] && str(gofs[gid].parent) && k < 30; k++) gid = str(gofs[gid].parent); return gid; };
+    var stageOf = {}, flows = {};
+    (d.nodes || []).forEach(function (n) { if (n && str(n.group)) stageOf[str(n.id)] = topOf(str(n.group)); });
+    (d.edges || []).forEach(function (e) {
+      var a = e && stageOf[str(e.from)], b = e && stageOf[str(e.to)];
+      if (a && b && a !== b && e.kind !== 'feedback' && e.kind !== 'bus') flows[a + '>' + b] = true;
+    });
+    var used = tops.filter(function (g) { return Object.keys(stageOf).some(function (id) { return stageOf[id] === g; }); });
+    var linked = used.filter(function (g) { return Object.keys(flows).some(function (k) { return k.split('>').indexOf(g) >= 0; }); });
+    var first = Object.keys(stageOf)[0];
+    if (used.length >= 3 && linked.length === used.length && first) out.push({ node: first, label: typeof ht === 'function' ? ht('nsArrangeStages') : 'Arrange as a pipeline', ops: [{ op: 'arrange', style: 'stages' }] });
+  }
   var deg = {}, outDeg = {};
   (d.edges || []).forEach(function (e) {
     if (!e) return;
@@ -1969,6 +1991,14 @@ function asChecks(raw, di) {
   var d = raw.diagrams[di], st = asStateOf(raw, di), out = [];
   edValidate(d).forEach(function (q) { out.push({ text: q.where + ' · ' + q.field + ': ' + q.text, fixes: asFieldFixes(raw, di, st, q) }); });
   if (st && st.L) wiringChecks(st.d, st.L).forEach(function (w) { out.push({ text: w.text, fixes: asWireFixes(raw, di, st, w) }); });
+  /* a hand-placed tab (not a draw.io drawing, which keeps its own look): a wire running under a block hides where it goes */
+  if (st && st.L && st.d && st.d.layout === 'manual' && !d.drawio && typeof hierBlockedWires === 'function') {
+    var named = function (id) { var n = st.d.nodeById[id]; return n ? '«' + (n.title || id) + '»' : id; };
+    hierBlockedWires({ nd: st.d, L: st.L }).filter(function (w) { return hierCanReroute(st.d, w.i); }).slice(0, 12).forEach(function (w) {
+      var e = st.d.edges[w.i];
+      out.push({ text: asl('cUnder', named(e.from), named(e.to), named(w.via)), soft: true, fixes: [{ label: asl('fRouteAround'), safe: true, ops: [{ op: 'routeAround' }] }] });
+    });
+  }
   /* detail boards and inside tabs out of step, open ports, port names (hier.js); "soft" ones are advice, not errors */
   if (typeof hierIssues === 'function') hierIssues(raw, di).forEach(function (q) { out.push({ text: q.text, soft: !!q.soft, fixes: q.fixes || [] }); });
   return out.map(function (c) {
